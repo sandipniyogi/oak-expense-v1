@@ -1,0 +1,21 @@
+services:
+  api:
+    environment:
+      OAK_SYNC_ENABLED: "1"
+  phone-cloud:
+    build: ./services/phone-queue
+    restart: unless-stopped
+    environment:
+      QUEUE_CLOUD: "1"
+      QUEUE_ENV: live
+      API_URL: http://api:4000
+    networks:
+      edge:
+        aliases:
+          - oak-phone
+    logging:
+      driver: local
+networks:
+  edge:
+    external: true
+    name: oak-edge

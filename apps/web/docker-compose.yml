@@ -1,0 +1,61 @@
+name: ${STACK_NAME:-oak-expense-v1}
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oak_expenses}
+      POSTGRES_USER: ${POSTGRES_USER:-oak}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oaklocal}
+    ports:
+      - "${DB_HOST_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oak} -d ${POSTGRES_DB:-oak_expenses}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ocr:
+    image: oak-ocr-debug
+    ports:
+      - "${OCR_HOST_PORT:-8001}:8001"
+    volumes:
+      - "${UPLOADS_DIR:-./storage/uploads}:/app/uploads"
+
+  api:
+    build: ./apps/api
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oak}:${POSTGRES_PASSWORD:-oaklocal}@db:5432/${POSTGRES_DB:-oak_expenses}
+      OCR_URL: http://ocr:8001
+      UPLOAD_DIR: /app/uploads
+    ports:
+      - "${API_HOST_PORT:-4000}:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+      ocr:
+        condition: service_started
+    volumes:
+      - "${UPLOADS_DIR:-./storage/uploads}:/app/uploads"
+      - "${REPORTS_DIR:-./storage/reports}:/app/reports"
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_APP_ENV: ${APP_ENV:-production}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_APP_ENV: ${APP_ENV:-production}
+    ports:
+      - "${WEB_HOST_PORT:-3000}:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

@@ -1,0 +1,4 @@
+services:
+  api:
+    environment:
+      OAK_SYNC_ENABLED: "1"

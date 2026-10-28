@@ -1,0 +1,17 @@
+
+# Oak automation private/generated data
+.env*
+*.key
+*.dump
+*.tar.gz
+*.zip
+backups/
+storage/
+storage-staging/
+node_modules/
+.next/
+.DS_Store
+._*
+__pycache__/
+config/phone-queue*/
+.oak-*
