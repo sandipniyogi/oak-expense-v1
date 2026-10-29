@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Mac scheduler: tested Git commits deploy; data syncs after 03:00 Asia/Shanghai."""
-import argparse,base64,datetime,fcntl,hashlib,json,os,pathlib,subprocess,sys,tarfile,io,time
+"""Mac scheduler: approved GitHub main releases; daily live expense-data sync."""
+import argparse,base64,contextlib,datetime,fcntl,hashlib,json,os,pathlib,subprocess,sys,tarfile,io,time
 from zoneinfo import ZoneInfo
 from merge import merge,baseline,canonical,TABLES
 from machine import Machine
 from deploy import deploy
+from approved import approved_commit,checkout,candidate_machine
 
 def atomic(path,data):
     path=pathlib.Path(path);path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -65,15 +66,16 @@ def release(root,commit):
     p=subprocess.run(['git','archive','--format=tar.gz',commit]+paths,cwd=root,check=True,stdout=subprocess.PIPE)
     return {'op':'deploy','archive':base64.b64encode(p.stdout).decode(),'sha256':hashlib.sha256(p.stdout).hexdigest(),'commit':commit}
 def auto_deploy(cfg,state,mac,vps):
+    # Fail closed until the owner explicitly enables the new release policy.
+    if cfg.get('release_policy')!='approved-main-v1':
+        return {'skipped':'Code deployment paused. Enable approved-main-v1 after configuring GitHub main protection. Data sync remains enabled.'}
     root=pathlib.Path(cfg['project'])
-    commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
-    tracked=['apps','services','db','scripts','automation']
-    if subprocess.check_output(['git','status','--porcelain','--']+tracked,cwd=root,text=True).strip():return {'skipped':'Uncommitted changes; waiting for a clean committed version'}
-    if read(state/'deployed.json',{}).get('commit')==commit:return {'unchanged':True}
+    commit=approved_commit(root)
+    previous=read(state/'deployed.json',{})
+    if previous.get('commit')==commit:return {'unchanged':True,'commit':commit}
     stage=Machine({**cfg,'env_file':'.env.staging','compose_files':['docker-compose.yml','automation/compose.local.yaml']})
     a=mac.resolved();b=stage.resolved()
     if a['name']==b['name']:raise RuntimeError('Staging and live project names must differ')
-    # Check data volumes/host paths are disjoint before starting staging.
     def sources(c):
         out=set()
         for service in ('db','api'):
@@ -82,20 +84,30 @@ def auto_deploy(cfg,state,mac,vps):
                     src=v['source'];out.add(c.get('volumes',{}).get(src,{}).get('name',src))
         return out
     if sources(a)&sources(b):raise RuntimeError('Staging storage overlaps live storage')
-    subprocess.run(['python3','-m','unittest','discover','-s','automation/tests'],cwd=root,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    stage.command(['up','-d','--build','api','web','ocr'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    for attempt in range(30):
-        try:stage.smoke();break
-        except Exception:
-            if attempt==29:raise RuntimeError('Staging smoke tests failed')
-            time.sleep(2)
-    # Refuse to deploy an artifact after files/HEAD changed during the staging build.
-    if commit!=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip() or subprocess.check_output(['git','status','--porcelain','--']+tracked,cwd=root,text=True).strip():raise RuntimeError('Code changed during staging validation; deployment postponed')
-    payload=release(root,commit)
-    result=deploy(mac,payload)
-    remote_result=vps.send(payload)
-    if result['sha256']!=remote_result['sha256']:raise RuntimeError('Release verification mismatch')
-    atomic(state/'deployed.json',{'commit':commit,'sha256':payload['sha256']});return {'ok':True,'commit':commit}
+    with checkout(root,commit,state) as source:
+        # Infrastructure changes need an explicit rollout: they must never be
+        # silently ignored while reporting that the complete commit deployed.
+        for name in ['docker-compose.yml','automation/compose.local.yaml']:
+            if not (root/name).is_file() or (root/name).read_bytes()!=(source/name).read_bytes():
+                raise RuntimeError('Compose configuration differs from approved main; review infrastructure before releasing')
+        subprocess.run(['python3','-m','unittest','discover','-s','automation/tests'],cwd=source,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        with contextlib.ExitStack() as stack:
+            candidate_stage=stack.enter_context(candidate_machine(stage,source,state))
+            candidate_live=stack.enter_context(candidate_machine(mac,source,state))
+            candidate_stage.command(['up','-d','--build','api','web','ocr'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            for attempt in range(30):
+                try:candidate_stage.smoke();break
+                except Exception:
+                    if attempt==29:raise RuntimeError('Staging smoke tests failed')
+                    time.sleep(2)
+            payload=release(root,commit)
+            result=deploy(candidate_live,payload)
+            atomic(state/'mac-release.json',{'commit':commit,'sha256':payload['sha256']})
+            # VPS never starts deploying until Mac live build and smoke pass.
+            remote_result=vps.send(payload)
+            if result['sha256']!=remote_result['sha256']:raise RuntimeError('Release verification mismatch')
+    atomic(state/'deployed.json',{'commit':commit,'sha256':payload['sha256']})
+    return {'ok':True,'commit':commit,'scope':'expense-api-web-ocr'}
 def notify(state,message):
     if sys.platform!='darwin':return
     now=time.time();last=read(state/'last-notification.json',{})
