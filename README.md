@@ -32,3 +32,7 @@ GitHub does not replace private backups of databases, receipts, production envir
 ## First-time readers
 
 The setup guide records the installation performed in October 2026 and identifies the machine-only configuration still needed for a full rebuild. It is not a claim that cloning this repository recreates live data or all server services automatically.
+
+## Everyday commands
+
+[Commands to Run the Code — Local and Server](docs/COMMANDS.md)
