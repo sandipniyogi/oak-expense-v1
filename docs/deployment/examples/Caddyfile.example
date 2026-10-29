@@ -1,0 +1,33 @@
+# Reconstructed routing example; verify upstream names against live config.
+# Do not replace the live Caddyfile with this example automatically.
+
+the-oak-lounge.online, www.the-oak-lounge.online {
+    reverse_proxy oak-restaurant:3080
+}
+
+expenses.the-oak-lounge.online {
+    basic_auth {
+        {$OAK_EXPENSE_USERNAME} {$OAK_EXPENSE_PASSWORD_HASH}
+    }
+
+    handle /phone {
+        redir /phone/ 308
+    }
+
+    handle_path /phone/* {
+        reverse_proxy oak-phone:8080
+    }
+
+    handle_path /api/* {
+        reverse_proxy oak-api:4000
+    }
+
+    handle {
+        reverse_proxy oak-web:3000
+    }
+}
+
+vpn.the-oak-lounge.online {
+    # Configure secret subscription delivery privately.
+    respond "Not configured" 404
+}

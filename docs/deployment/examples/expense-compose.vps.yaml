@@ -1,0 +1,27 @@
+# REVIEW TEMPLATE — not a production-ready replacement.
+# Environment values were removed intentionally.
+name: oak-vps
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${OAK_EXPENSE_COMPOSE_VPS_SERVICES_DB_ENVIRONMENT_POSTGRES_DB:?Set
+        privately}
+      POSTGRES_USER: ${OAK_EXPENSE_COMPOSE_VPS_SERVICES_DB_ENVIRONMENT_POSTGRES_USER:?Set
+        privately}
+      POSTGRES_PASSWORD: ${OAK_EXPENSE_COMPOSE_VPS_SERVICES_DB_ENVIRONMENT_POSTGRES_PASSWORD:?Set
+        privately}
+    volumes:
+    - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U oak -d oak_expenses
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: local
+volumes:
+  pgdata: null
