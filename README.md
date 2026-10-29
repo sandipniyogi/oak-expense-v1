@@ -1,44 +1,34 @@
-# Oak Lounge Inventory v3.1 — Admin Edit Patch
+# The Oak Lounge — oak-expense-v1
 
-This patch adds Edit controls to the existing v3 Admin Panel.
+One repository for the expense system, restaurant website, inventory, keg, social, AI services and deployment/sync automation.
 
-Replace/merge only the files included in this patch. Do not replace your complete `apps`, `services`, or project folders.
+## Setup and recovery documentation
 
-Editable items:
-- Products: name, SKU, category, subcategory, display unit, reorder level, target/par level, notes
-- Categories: name, code, display order
-- Suppliers: name, contact, phone, email, notes
-- Locations: name, category, code
-- Pack sizes: label, quantity/unit, preferred flag
-- Supplier/pack barcodes: barcode value
+Start with [Setup process and environment map](docs/setup/SETUP-PROCESS.md).
 
-Locked intentionally:
-- Product tracking type (weight/volume/count)
-- Oak internal barcode
+- [Backup inventory and recovery checklist](docs/setup/BACKUP-AND-RECOVERY.md)
+- [Approved release workflow](docs/RELEASE-FLOW.md)
+- [Mac staging/live setup](STAGING_PRODUCTION_SETUP.md) — historical bootstrap instructions; use the approved release flow for current expense promotions.
+- [Restaurant local-first deployment](restaurant/LOCAL-FIRST.md)
+- [Restaurant documentation](restaurant/README.md)
+- [Inventory setup](INVENTORY_ENGINE_SETUP.md)
+- [Keg simulator setup](KEG_SIMULATOR_SETUP.md)
+- [Inventory admin edit patch](docs/INVENTORY-ADMIN-PATCH.md) — preserved previous README content.
 
-No database reset or migration is required.
+## Current expense workflow
 
-After copying the files, rebuild Staging:
+Mac staging → GitHub `staging` → pull request and Source checks → approved `main` → Mac live validation → VPS.
 
-```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.inventory.yml \
-  --env-file .env.staging \
-  up -d --build inventory-api web
-```
+The stable scheduler runs outside the development checkout. Live expense records and receipt files sync between Mac and VPS daily at 03:00 Asia/Shanghai, with catch-up and conflict review. Staging data stays separate.
 
-Verify:
+The expense deployer does not automatically deploy every other module. See the release guide for exact scope.
 
-```bash
-curl http://localhost:4300/health
-```
+## What GitHub stores
 
-Expected build:
+Source code, reviewed configuration templates, documentation, menu artwork, tests and deployment scripts.
 
-`oak-lounge-inventory-v3.1-admin-edit`
+GitHub does not replace private backups of databases, receipts, production environment files, scheduler state, SSH/VPN keys or credentials. Never commit the private operations guide containing passwords. Use a redacted guide here and encrypted storage for the private recovery materials.
 
-Then open:
+## First-time readers
 
-`http://localhost:3100/inventory/admin`
-# oak-expense-v1
+The setup guide records the installation performed in October 2026 and identifies the machine-only configuration still needed for a full rebuild. It is not a claim that cloning this repository recreates live data or all server services automatically.
