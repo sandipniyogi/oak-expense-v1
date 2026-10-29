@@ -1,0 +1,12 @@
+services:
+  oak-ai:
+    build: ./services/oak-ai
+    environment:
+      PORT: 4400
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+    ports:
+      - "${AI_API_HOST_PORT:-4400}:4400"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

@@ -1,0 +1,29 @@
+name: oak-restaurant
+services:
+  website:
+    build: .
+    restart: unless-stopped
+    env_file: .env.restaurant
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /data
+      PUBLIC_ORIGIN: https://the-oak-lounge.online
+    volumes:
+      - restaurant_data:/data
+    networks:
+      edge:
+        aliases:
+          - oak-restaurant
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: local
+volumes:
+  restaurant_data:
+networks:
+  edge:
+    external: true
+    name: oak-edge

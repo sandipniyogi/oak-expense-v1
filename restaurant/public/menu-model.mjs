@@ -1,0 +1,2 @@
+export function filterMenu(rows,{category='food',group='All',query=''}={}){const q=query.trim().normalize('NFKC').toLocaleLowerCase();return rows.filter(r=>r.category===category&&(group==='All'||(r.tags?.[0]||'More favourites')===group)&&[r.name,r.description,...(r.tags||[])].join(' ').normalize('NFKC').toLocaleLowerCase().includes(q));}
+export function menuImage(row,photos){const generic=['/assets/biryani-table.jpg','/assets/tandoor-table.jpg'];return row.image&&!generic.includes(row.image)?row.image:photos[row.name]||row.image||'';}

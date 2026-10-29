@@ -1,0 +1,12 @@
+services:
+  inventory-api:
+    build: ./services/inventory-api
+    environment:
+      PORT: 4200
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oak}:${POSTGRES_PASSWORD:-oaklocal}@db:5432/${POSTGRES_DB:-oak_expenses}
+    ports:
+      - "${INVENTORY_API_HOST_PORT:-4200}:4200"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped

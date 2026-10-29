@@ -1,0 +1,27 @@
+services:
+  website:
+    image: ${RESTAURANT_IMAGE:?Run the local setup script}
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATA_DIR: /data
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Local origin required}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Admin password required}
+      ADMIN_COOKIE_NAME: ${ADMIN_COOKIE_NAME:?Cookie scope required}
+      INSTAGRAM_ACCESS_TOKEN: ${INSTAGRAM_ACCESS_TOKEN:-}
+      INSTAGRAM_USER_ID: ${INSTAGRAM_USER_ID:-}
+      APP_ENV: ${APP_ENV:?Environment label required}
+    ports:
+      - "127.0.0.1:${SITE_PORT:?Local port required}:3080"
+    volumes:
+      - restaurant_data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: local
+volumes:
+  restaurant_data:

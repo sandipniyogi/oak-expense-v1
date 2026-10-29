@@ -1,0 +1,10 @@
+services:
+  phone-queue:
+    build: ./services/phone-queue
+    environment:
+      API_URL: http://api:4000
+    ports:
+      - "${PHONE_QUEUE_PORT:-3443}:3443"
+    volumes:
+      - ./config/phone-queue:/certs:ro
+    restart: unless-stopped

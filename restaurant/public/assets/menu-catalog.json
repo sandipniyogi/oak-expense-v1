@@ -1,0 +1,2407 @@
+[
+  {
+    "category": "food",
+    "name": "Ajilo Gambas",
+    "description": "蒜香虾",
+    "price_cents": 8800,
+    "tags": [
+      "Calcutta cabin"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 0
+  },
+  {
+    "category": "food",
+    "name": "Egg Devil",
+    "description": "炸蛋饼",
+    "price_cents": 4800,
+    "tags": [
+      "Calcutta cabin"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 1
+  },
+  {
+    "category": "food",
+    "name": "Crispy Conzy Lamb",
+    "description": "酥脆羊肉卷",
+    "price_cents": 7800,
+    "tags": [
+      "Calcutta cabin"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 2
+  },
+  {
+    "category": "food",
+    "name": "Calcutta Fish Finger",
+    "description": "加尔各答特色炸鱼条",
+    "price_cents": 6800,
+    "tags": [
+      "Calcutta cabin"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 3
+  },
+  {
+    "category": "food",
+    "name": "Chili Fish",
+    "description": "辣炒鱼",
+    "price_cents": 6800,
+    "tags": [
+      "Calcutta cabin"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 4
+  },
+  {
+    "category": "food",
+    "name": "Mutton Chaap w/ Paratha",
+    "description": "炭烤羊排配铁板饼",
+    "price_cents": 7800,
+    "tags": [
+      "Calcutta cabin"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 5
+  },
+  {
+    "category": "food",
+    "name": "Tandoori Chicken — Half",
+    "description": "炭烤鸡半只",
+    "price_cents": 7800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 6
+  },
+  {
+    "category": "food",
+    "name": "Tandoori Chicken — Full",
+    "description": "炭烤鸡整只",
+    "price_cents": 13800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 7
+  },
+  {
+    "category": "food",
+    "name": "Chicken Malai Tikka",
+    "description": "奶油烤鸡块",
+    "price_cents": 6800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 8
+  },
+  {
+    "category": "food",
+    "name": "Boti Mutton",
+    "description": "羊肉块烤串",
+    "price_cents": 7800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 9
+  },
+  {
+    "category": "food",
+    "name": "Chicken Manchurian",
+    "description": "印式鸡肉满洲里风味",
+    "price_cents": 6800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 10
+  },
+  {
+    "category": "food",
+    "name": "Lamb Seekh Kabab",
+    "description": "羊肉串烤饼卷",
+    "price_cents": 7800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 11
+  },
+  {
+    "category": "food",
+    "name": "Chicken Tikka",
+    "description": "印式炭烤鸡块",
+    "price_cents": 6800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 12
+  },
+  {
+    "category": "food",
+    "name": "Dragon Chicken",
+    "description": "龙式辣鸡",
+    "price_cents": 6800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 13
+  },
+  {
+    "category": "food",
+    "name": "Garlic Fish Tikka",
+    "description": "蒜香烤鱼块",
+    "price_cents": 6800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 14
+  },
+  {
+    "category": "food",
+    "name": "Tangdi Murg",
+    "description": "鸡腿烤肉",
+    "price_cents": 7800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 15
+  },
+  {
+    "category": "food",
+    "name": "Lamb Chop",
+    "description": "烤羊排",
+    "price_cents": 8800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 16
+  },
+  {
+    "category": "food",
+    "name": "Oak Lounge Non-Veg Platter",
+    "description": "Oak Lounge 非素拼盘",
+    "price_cents": 14800,
+    "tags": [
+      "Tandoor & starters"
+    ],
+    "image": "/assets/tandoor-table.jpg",
+    "published": true,
+    "available": true,
+    "sort_order": 17
+  },
+  {
+    "category": "food",
+    "name": "Fuchka",
+    "description": "脆球小吃",
+    "price_cents": 3800,
+    "tags": [
+      "Veg starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 18
+  },
+  {
+    "category": "food",
+    "name": "Gobi Manchurian",
+    "description": "印式中餐花菜球",
+    "price_cents": 5800,
+    "tags": [
+      "Veg starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 19
+  },
+  {
+    "category": "food",
+    "name": "Chili Paneer",
+    "description": "辣椒芝士块",
+    "price_cents": 6800,
+    "tags": [
+      "Veg starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 20
+  },
+  {
+    "category": "food",
+    "name": "Papdi Chaat",
+    "description": "脆饼酸辣小吃",
+    "price_cents": 3800,
+    "tags": [
+      "Veg starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 21
+  },
+  {
+    "category": "food",
+    "name": "Grilled Broccoli",
+    "description": "烤西兰花",
+    "price_cents": 5800,
+    "tags": [
+      "Veg starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 22
+  },
+  {
+    "category": "food",
+    "name": "Paneer Tikka",
+    "description": "印式炭烤芝士块",
+    "price_cents": 6800,
+    "tags": [
+      "Veg starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 23
+  },
+  {
+    "category": "food",
+    "name": "Stuffed Mushrooms",
+    "description": "酿蘑菇",
+    "price_cents": 6800,
+    "tags": [
+      "Veg starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 24
+  },
+  {
+    "category": "food",
+    "name": "Samosa Chaat",
+    "description": "咖喱角酸辣小吃",
+    "price_cents": 4800,
+    "tags": [
+      "Veg starters"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 25
+  },
+  {
+    "category": "food",
+    "name": "Tomato Coriander Shorba",
+    "description": "番茄香菜汤",
+    "price_cents": 2800,
+    "tags": [
+      "Soups & salads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 26
+  },
+  {
+    "category": "food",
+    "name": "Creamy Mushroom Soup",
+    "description": "奶油蘑菇汤",
+    "price_cents": 2800,
+    "tags": [
+      "Soups & salads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 27
+  },
+  {
+    "category": "food",
+    "name": "Hot & Sour Soup",
+    "description": "酸辣汤",
+    "price_cents": 2800,
+    "tags": [
+      "Soups & salads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 28
+  },
+  {
+    "category": "food",
+    "name": "Caesar Salad",
+    "description": "凯撒沙拉 · ¥48 / ¥58 — ask the team about options",
+    "price_cents": 4800,
+    "tags": [
+      "Soups & salads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 29
+  },
+  {
+    "category": "food",
+    "name": "French Fries",
+    "description": "炸薯条",
+    "price_cents": 2500,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 30
+  },
+  {
+    "category": "food",
+    "name": "Sweet Potato Fries",
+    "description": "甜薯条",
+    "price_cents": 3500,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 31
+  },
+  {
+    "category": "food",
+    "name": "Roasted Papad",
+    "description": "烤脆饼",
+    "price_cents": 1800,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 32
+  },
+  {
+    "category": "food",
+    "name": "Golden Calamari",
+    "description": "金黄鱿鱼圈",
+    "price_cents": 6800,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 33
+  },
+  {
+    "category": "food",
+    "name": "Beef Chili Nachos",
+    "description": "牛肉辣味玉米片",
+    "price_cents": 6800,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 34
+  },
+  {
+    "category": "food",
+    "name": "Veg Samosa",
+    "description": "蔬菜咖喱角",
+    "price_cents": 2800,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 35
+  },
+  {
+    "category": "food",
+    "name": "Truffle Fries",
+    "description": "松露薯条",
+    "price_cents": 3800,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 36
+  },
+  {
+    "category": "food",
+    "name": "Masala Papad",
+    "description": "马沙拉脆饼",
+    "price_cents": 2200,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 37
+  },
+  {
+    "category": "food",
+    "name": "Chicken Popcorn",
+    "description": "炸鸡米花",
+    "price_cents": 3800,
+    "tags": [
+      "Bar bites"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 38
+  },
+  {
+    "category": "food",
+    "name": "Chicken Kosha",
+    "description": "加尔各答浓香鸡肉咖喱",
+    "price_cents": 7800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 39
+  },
+  {
+    "category": "food",
+    "name": "Butter Chicken",
+    "description": "黄油鸡",
+    "price_cents": 6800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 40
+  },
+  {
+    "category": "food",
+    "name": "Mutton Kosha",
+    "description": "加尔各答浓香羊肉咖喱",
+    "price_cents": 8800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 41
+  },
+  {
+    "category": "food",
+    "name": "Mutton Handi (Bone-in)",
+    "description": "带骨砂锅羊肉咖喱",
+    "price_cents": 8800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 42
+  },
+  {
+    "category": "food",
+    "name": "Chicken Tikka Masala",
+    "description": "鸡肉玛萨拉咖喱",
+    "price_cents": 7800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 43
+  },
+  {
+    "category": "food",
+    "name": "Chicken Rezala (Bone-in)",
+    "description": "带骨鸡肉瑞扎拉咖喱",
+    "price_cents": 6800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 44
+  },
+  {
+    "category": "food",
+    "name": "Mutton Rogan Josh",
+    "description": "羊肉罗根乔什咖喱",
+    "price_cents": 8800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 45
+  },
+  {
+    "category": "food",
+    "name": "Kheema",
+    "description": "碎肉咖喱",
+    "price_cents": 8800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 46
+  },
+  {
+    "category": "food",
+    "name": "Beef Bhuna",
+    "description": "炒制牛肉咖喱",
+    "price_cents": 7800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 47
+  },
+  {
+    "category": "food",
+    "name": "Doi Maach",
+    "description": "酸奶鱼咖喱",
+    "price_cents": 6800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 48
+  },
+  {
+    "category": "food",
+    "name": "Chingri Malai Curry",
+    "description": "椰奶虾咖喱",
+    "price_cents": 7800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 49
+  },
+  {
+    "category": "food",
+    "name": "Shorshe Maach",
+    "description": "芥末鱼",
+    "price_cents": 6800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 50
+  },
+  {
+    "category": "food",
+    "name": "Pomfret Paturi",
+    "description": "鲳鱼蕉叶包烤",
+    "price_cents": 9800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 51
+  },
+  {
+    "category": "food",
+    "name": "Prawns Goan Curry",
+    "description": "果阿虾咖喱",
+    "price_cents": 7800,
+    "tags": [
+      "Bengali & Indian mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 52
+  },
+  {
+    "category": "food",
+    "name": "Saag Paneer",
+    "description": "菠菜芝士咖喱",
+    "price_cents": 6800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 53
+  },
+  {
+    "category": "food",
+    "name": "Vegetable Korma",
+    "description": "蔬菜库尔玛咖喱",
+    "price_cents": 5800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 54
+  },
+  {
+    "category": "food",
+    "name": "Paneer Butter Masala",
+    "description": "黄油芝士咖喱",
+    "price_cents": 6800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 55
+  },
+  {
+    "category": "food",
+    "name": "Dal Tadka",
+    "description": "炒香扁豆咖喱",
+    "price_cents": 5800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 56
+  },
+  {
+    "category": "food",
+    "name": "Chana Masala",
+    "description": "鹰嘴豆玛萨拉咖喱",
+    "price_cents": 5800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 57
+  },
+  {
+    "category": "food",
+    "name": "Aloo Dum",
+    "description": "香料土豆咖喱",
+    "price_cents": 5800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 58
+  },
+  {
+    "category": "food",
+    "name": "Mix Sauteed Vegetable",
+    "description": "什锦炒蔬菜",
+    "price_cents": 5800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 59
+  },
+  {
+    "category": "food",
+    "name": "Paneer Tikka Masala",
+    "description": "烤芝士块玛萨拉咖喱",
+    "price_cents": 6800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 60
+  },
+  {
+    "category": "food",
+    "name": "Chana Dal (Chef Special)",
+    "description": "特色鹰嘴豆扁豆咖喱",
+    "price_cents": 5800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 61
+  },
+  {
+    "category": "food",
+    "name": "Dimer Jhol",
+    "description": "鸡蛋咖喱",
+    "price_cents": 5800,
+    "tags": [
+      "Veg mains"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 62
+  },
+  {
+    "category": "food",
+    "name": "Kolkata Mutton Biryani",
+    "description": "加尔各答羊肉手抓饭",
+    "price_cents": 8800,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "/assets/biryani-table.jpg",
+    "published": true,
+    "available": true,
+    "sort_order": 63
+  },
+  {
+    "category": "food",
+    "name": "Kolkata Chicken Biryani",
+    "description": "加尔各答鸡肉手抓饭",
+    "price_cents": 7800,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 64
+  },
+  {
+    "category": "food",
+    "name": "Khao Pad Kra Pao Gai",
+    "description": "泰式打抛鸡炒饭",
+    "price_cents": 5800,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 65
+  },
+  {
+    "category": "food",
+    "name": "Egg Fried Rice",
+    "description": "蛋炒饭",
+    "price_cents": 4800,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 66
+  },
+  {
+    "category": "food",
+    "name": "Basmati Rice",
+    "description": "巴斯马蒂香米",
+    "price_cents": 1000,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 67
+  },
+  {
+    "category": "food",
+    "name": "Kheema Biryani",
+    "description": "肉末手抓饭",
+    "price_cents": 8800,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 68
+  },
+  {
+    "category": "food",
+    "name": "Veg Biryani",
+    "description": "蔬菜手抓饭",
+    "price_cents": 6800,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 69
+  },
+  {
+    "category": "food",
+    "name": "Seafood Rice (Chef Special)",
+    "description": "特色海鲜饭",
+    "price_cents": 6800,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 70
+  },
+  {
+    "category": "food",
+    "name": "Jeera Rice",
+    "description": "孜然米饭",
+    "price_cents": 3800,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 71
+  },
+  {
+    "category": "food",
+    "name": "Chinese White Rice",
+    "description": "中式白米饭",
+    "price_cents": 500,
+    "tags": [
+      "Biryani & rice"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 72
+  },
+  {
+    "category": "food",
+    "name": "Plain Naan",
+    "description": "原味烤饼",
+    "price_cents": 1800,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 73
+  },
+  {
+    "category": "food",
+    "name": "Garlic Naan",
+    "description": "蒜香烤饼",
+    "price_cents": 2400,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 74
+  },
+  {
+    "category": "food",
+    "name": "Kheema Naan",
+    "description": "肉末烤饼",
+    "price_cents": 3200,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 75
+  },
+  {
+    "category": "food",
+    "name": "Tandoori Roti",
+    "description": "炭烤印度饼",
+    "price_cents": 2000,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 76
+  },
+  {
+    "category": "food",
+    "name": "Onion Paratha",
+    "description": "洋葱馅饼",
+    "price_cents": 2500,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 77
+  },
+  {
+    "category": "food",
+    "name": "Butter Naan",
+    "description": "黄油烤饼",
+    "price_cents": 2200,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 78
+  },
+  {
+    "category": "food",
+    "name": "Cheese Naan",
+    "description": "芝士烤饼",
+    "price_cents": 2800,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 79
+  },
+  {
+    "category": "food",
+    "name": "Phulka Roti",
+    "description": "薄烤饼",
+    "price_cents": 1800,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 80
+  },
+  {
+    "category": "food",
+    "name": "Aloo Paratha",
+    "description": "土豆馅饼",
+    "price_cents": 2500,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 81
+  },
+  {
+    "category": "food",
+    "name": "Luchhi Kolkata Special",
+    "description": "加尔各答特色炸面饼",
+    "price_cents": 2000,
+    "tags": [
+      "Breads"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 82
+  },
+  {
+    "category": "food",
+    "name": "Buffalo Chicken Wrap",
+    "description": "水牛城鸡肉卷",
+    "price_cents": 4800,
+    "tags": [
+      "Wraps & pasta"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 83
+  },
+  {
+    "category": "food",
+    "name": "Spaghetti Bolognese",
+    "description": "肉酱意大利面",
+    "price_cents": 5800,
+    "tags": [
+      "Wraps & pasta"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 84
+  },
+  {
+    "category": "food",
+    "name": "Penne Pesto Chicken",
+    "description": "鸡肉青酱通心粉",
+    "price_cents": 5800,
+    "tags": [
+      "Wraps & pasta"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 85
+  },
+  {
+    "category": "food",
+    "name": "Pesto Chicken Wrap",
+    "description": "青酱鸡肉卷",
+    "price_cents": 4800,
+    "tags": [
+      "Wraps & pasta"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 86
+  },
+  {
+    "category": "food",
+    "name": "Penne Alfredo Chicken",
+    "description": "鸡肉白酱通心粉",
+    "price_cents": 5800,
+    "tags": [
+      "Wraps & pasta"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 87
+  },
+  {
+    "category": "food",
+    "name": "Kolkata Misti Doi",
+    "description": "加尔各答甜酸奶",
+    "price_cents": 4800,
+    "tags": [
+      "Something sweet"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 88
+  },
+  {
+    "category": "food",
+    "name": "Sahi Tukda",
+    "description": "皇家面包布丁",
+    "price_cents": 4800,
+    "tags": [
+      "Something sweet"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 89
+  },
+  {
+    "category": "food",
+    "name": "Rabdi",
+    "description": "拉布迪",
+    "price_cents": 3800,
+    "tags": [
+      "Something sweet"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 90
+  },
+  {
+    "category": "food",
+    "name": "Falooda",
+    "description": "法露达冰饮",
+    "price_cents": 4800,
+    "tags": [
+      "Something sweet"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 91
+  },
+  {
+    "category": "cocktails",
+    "name": "Suzie's Aperol Spritz",
+    "description": "SUZIE的阿佩罗橙光",
+    "price_cents": 8800,
+    "tags": [
+      "Aperitivo & bubbles"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 92
+  },
+  {
+    "category": "cocktails",
+    "name": "Classic Mimosa",
+    "description": "咪摩沙",
+    "price_cents": 7800,
+    "tags": [
+      "Aperitivo & bubbles"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 93
+  },
+  {
+    "category": "cocktails",
+    "name": "Tropical Mimosa",
+    "description": "热带咪摩沙",
+    "price_cents": 7800,
+    "tags": [
+      "Aperitivo & bubbles"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 94
+  },
+  {
+    "category": "cocktails",
+    "name": "Raspberry Prosecco",
+    "description": "树莓普罗塞克",
+    "price_cents": 7800,
+    "tags": [
+      "Aperitivo & bubbles"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 95
+  },
+  {
+    "category": "cocktails",
+    "name": "Aperol Spritz",
+    "description": "阿佩罗橙光",
+    "price_cents": 7800,
+    "tags": [
+      "Aperitivo & bubbles"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 96
+  },
+  {
+    "category": "cocktails",
+    "name": "Piña Colada",
+    "description": "椰林飘香",
+    "price_cents": 8800,
+    "tags": [
+      "Rum & tropical"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 97
+  },
+  {
+    "category": "cocktails",
+    "name": "Daiquiri",
+    "description": "大吉利",
+    "price_cents": 7800,
+    "tags": [
+      "Rum & tropical"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 98
+  },
+  {
+    "category": "cocktails",
+    "name": "Fruity Daiquiri",
+    "description": "果味大吉利",
+    "price_cents": 8800,
+    "tags": [
+      "Rum & tropical"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 99
+  },
+  {
+    "category": "cocktails",
+    "name": "Cuba Libre",
+    "description": "自由古巴",
+    "price_cents": 7800,
+    "tags": [
+      "Rum & tropical"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 100
+  },
+  {
+    "category": "cocktails",
+    "name": "Dark & Stormy",
+    "description": "黑暗风暴",
+    "price_cents": 8800,
+    "tags": [
+      "Rum & tropical"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 101
+  },
+  {
+    "category": "cocktails",
+    "name": "Coconut Rum Punch",
+    "description": "椰林宾治",
+    "price_cents": 8800,
+    "tags": [
+      "Rum & tropical"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 102
+  },
+  {
+    "category": "cocktails",
+    "name": "Mai Tai",
+    "description": "迈泰",
+    "price_cents": 8800,
+    "tags": [
+      "Rum & tropical"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 103
+  },
+  {
+    "category": "cocktails",
+    "name": "Cosmopolitan",
+    "description": "大都会",
+    "price_cents": 7800,
+    "tags": [
+      "Vodka cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 104
+  },
+  {
+    "category": "cocktails",
+    "name": "Blue Lagoon",
+    "description": "蓝色礁湖",
+    "price_cents": 7800,
+    "tags": [
+      "Vodka cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 105
+  },
+  {
+    "category": "cocktails",
+    "name": "Moscow Mule",
+    "description": "莫斯科骡子",
+    "price_cents": 7800,
+    "tags": [
+      "Vodka cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 106
+  },
+  {
+    "category": "cocktails",
+    "name": "White Russian",
+    "description": "白俄罗斯",
+    "price_cents": 8800,
+    "tags": [
+      "Vodka cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 107
+  },
+  {
+    "category": "cocktails",
+    "name": "Black Russian",
+    "description": "黑俄罗斯",
+    "price_cents": 8800,
+    "tags": [
+      "Vodka cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 108
+  },
+  {
+    "category": "cocktails",
+    "name": "Vodka Martini",
+    "description": "伏特加马天尼",
+    "price_cents": 8800,
+    "tags": [
+      "Vodka cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 109
+  },
+  {
+    "category": "cocktails",
+    "name": "The Best Damn Bloody Mary",
+    "description": "血腥玛丽",
+    "price_cents": 8800,
+    "tags": [
+      "Vodka cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 110
+  },
+  {
+    "category": "cocktails",
+    "name": "Classic Martini",
+    "description": "经典马天尼",
+    "price_cents": 7800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 111
+  },
+  {
+    "category": "cocktails",
+    "name": "Dirty Martini",
+    "description": "干马天尼",
+    "price_cents": 8800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 112
+  },
+  {
+    "category": "cocktails",
+    "name": "Gin Tonic",
+    "description": "金汤力",
+    "price_cents": 8800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 113
+  },
+  {
+    "category": "cocktails",
+    "name": "Gimlet",
+    "description": "吉姆雷特",
+    "price_cents": 7800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 114
+  },
+  {
+    "category": "cocktails",
+    "name": "Negroni",
+    "description": "尼格罗尼",
+    "price_cents": 7800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 115
+  },
+  {
+    "category": "cocktails",
+    "name": "Tom Collins",
+    "description": "汤姆柯林斯",
+    "price_cents": 7800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 116
+  },
+  {
+    "category": "cocktails",
+    "name": "Blue Lady",
+    "description": "蓝色佳人",
+    "price_cents": 8800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 117
+  },
+  {
+    "category": "cocktails",
+    "name": "Pink Lady",
+    "description": "粉色佳人",
+    "price_cents": 8800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 118
+  },
+  {
+    "category": "cocktails",
+    "name": "White Lady",
+    "description": "白色佳人",
+    "price_cents": 8800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 119
+  },
+  {
+    "category": "cocktails",
+    "name": "Gin Basil",
+    "description": "罗勒金酒",
+    "price_cents": 7800,
+    "tags": [
+      "Gin cocktails"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 120
+  },
+  {
+    "category": "cocktails",
+    "name": "Classic Margarita",
+    "description": "玛格丽特",
+    "price_cents": 7800,
+    "tags": [
+      "Margaritas & mojitos"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 121
+  },
+  {
+    "category": "cocktails",
+    "name": "Jalapeño Margarita",
+    "description": "辣味玛格丽特",
+    "price_cents": 8800,
+    "tags": [
+      "Margaritas & mojitos"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 122
+  },
+  {
+    "category": "cocktails",
+    "name": "Mango Margarita",
+    "description": "芒果玛格丽特",
+    "price_cents": 8800,
+    "tags": [
+      "Margaritas & mojitos"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 123
+  },
+  {
+    "category": "cocktails",
+    "name": "Strawberry Margarita",
+    "description": "草莓玛格丽特",
+    "price_cents": 8800,
+    "tags": [
+      "Margaritas & mojitos"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 124
+  },
+  {
+    "category": "cocktails",
+    "name": "Classic Mojito",
+    "description": "莫吉托",
+    "price_cents": 7800,
+    "tags": [
+      "Margaritas & mojitos"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 125
+  },
+  {
+    "category": "cocktails",
+    "name": "Strawberry Mojito",
+    "description": "草莓莫吉托",
+    "price_cents": 8800,
+    "tags": [
+      "Margaritas & mojitos"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 126
+  },
+  {
+    "category": "cocktails",
+    "name": "Mango Mojito",
+    "description": "芒果莫吉托",
+    "price_cents": 8800,
+    "tags": [
+      "Margaritas & mojitos"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 127
+  },
+  {
+    "category": "cocktails",
+    "name": "Cucumber Mojito",
+    "description": "黄瓜莫吉托",
+    "price_cents": 8800,
+    "tags": [
+      "Margaritas & mojitos"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 128
+  },
+  {
+    "category": "cocktails",
+    "name": "Pisco Sour",
+    "description": "皮斯科酸",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 129
+  },
+  {
+    "category": "cocktails",
+    "name": "Long Island Tea",
+    "description": "长岛冰茶",
+    "price_cents": 8800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 130
+  },
+  {
+    "category": "cocktails",
+    "name": "Zombie",
+    "description": "僵尸",
+    "price_cents": 8800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 131
+  },
+  {
+    "category": "cocktails",
+    "name": "Sex on the Snow",
+    "description": "冰雪之恋",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 132
+  },
+  {
+    "category": "cocktails",
+    "name": "Sex on the Beach",
+    "description": "性感沙滩",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 133
+  },
+  {
+    "category": "cocktails",
+    "name": "Brave Bull",
+    "description": "勇敢公牛",
+    "price_cents": 8800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 134
+  },
+  {
+    "category": "cocktails",
+    "name": "Espresso Martini",
+    "description": "咖啡马天尼",
+    "price_cents": 8800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 135
+  },
+  {
+    "category": "cocktails",
+    "name": "Singapore Sling",
+    "description": "新加坡司令",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 136
+  },
+  {
+    "category": "cocktails",
+    "name": "Special",
+    "description": "特调鸡尾酒",
+    "price_cents": 8800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 137
+  },
+  {
+    "category": "cocktails",
+    "name": "Tequila Sunrise",
+    "description": "龙舌兰日出",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 138
+  },
+  {
+    "category": "cocktails",
+    "name": "Old Fashioned",
+    "description": "古典",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 139
+  },
+  {
+    "category": "cocktails",
+    "name": "Whiskey Sour",
+    "description": "威士忌酸",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 140
+  },
+  {
+    "category": "cocktails",
+    "name": "Rusty Nail",
+    "description": "生锈钉",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 141
+  },
+  {
+    "category": "cocktails",
+    "name": "Manhattan",
+    "description": "曼哈顿",
+    "price_cents": 8800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 142
+  },
+  {
+    "category": "cocktails",
+    "name": "Mint Julep",
+    "description": "薄荷朱利普",
+    "price_cents": 7800,
+    "tags": [
+      "Bar classics"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 143
+  },
+  {
+    "category": "cocktails",
+    "name": "Whisky Coke",
+    "description": "威士忌可乐",
+    "price_cents": 5800,
+    "tags": [
+      "House mixes"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 144
+  },
+  {
+    "category": "cocktails",
+    "name": "House Gin Tonic",
+    "description": "金汤力",
+    "price_cents": 5800,
+    "tags": [
+      "House mixes"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 145
+  },
+  {
+    "category": "cocktails",
+    "name": "Red Bull Vodka",
+    "description": "红牛伏特加",
+    "price_cents": 6800,
+    "tags": [
+      "House mixes"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 146
+  },
+  {
+    "category": "cocktails",
+    "name": "Vodka Soda",
+    "description": "伏特加苏打水",
+    "price_cents": 5800,
+    "tags": [
+      "House mixes"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 147
+  },
+  {
+    "category": "cocktails",
+    "name": "Rum Coke",
+    "description": "朗姆可乐",
+    "price_cents": 5800,
+    "tags": [
+      "House mixes"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 148
+  },
+  {
+    "category": "cocktails",
+    "name": "Tequila Soda",
+    "description": "龙舌兰苏打水",
+    "price_cents": 5800,
+    "tags": [
+      "House mixes"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 149
+  },
+  {
+    "category": "cocktails",
+    "name": "Guinness — Draft",
+    "description": "健力士",
+    "price_cents": 5500,
+    "tags": [
+      "Beer"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 150
+  },
+  {
+    "category": "cocktails",
+    "name": "Goose Island IPA — Draft",
+    "description": "鹅岛",
+    "price_cents": 4800,
+    "tags": [
+      "Beer"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 151
+  },
+  {
+    "category": "cocktails",
+    "name": "Asahi — Draft",
+    "description": "朝日",
+    "price_cents": 3500,
+    "tags": [
+      "Beer"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 152
+  },
+  {
+    "category": "cocktails",
+    "name": "Corona — Bottle",
+    "description": "科罗纳",
+    "price_cents": 3500,
+    "tags": [
+      "Beer"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 153
+  },
+  {
+    "category": "cocktails",
+    "name": "Hoegaarden — Bottle",
+    "description": "福佳白",
+    "price_cents": 3500,
+    "tags": [
+      "Beer"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 154
+  },
+  {
+    "category": "cocktails",
+    "name": "Budweiser — Bottle",
+    "description": "百威",
+    "price_cents": 3500,
+    "tags": [
+      "Beer"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 155
+  },
+  {
+    "category": "shisha",
+    "name": "Arabic Flavor",
+    "description": "阿拉伯口味",
+    "price_cents": 18800,
+    "tags": [
+      "Shisha"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 156
+  },
+  {
+    "category": "shisha",
+    "name": "Premium Arabic Flavor",
+    "description": "精选阿拉伯口味",
+    "price_cents": 21800,
+    "tags": [
+      "Shisha"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 157
+  },
+  {
+    "category": "shisha",
+    "name": "Shisha Classic Black Flavor",
+    "description": "经典黑色口味水烟",
+    "price_cents": 28800,
+    "tags": [
+      "Shisha"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 158
+  },
+  {
+    "category": "shisha",
+    "name": "Premium Cigar Leave — 388",
+    "description": "精选雪茄烟叶",
+    "price_cents": 38800,
+    "tags": [
+      "Shisha"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 159
+  },
+  {
+    "category": "shisha",
+    "name": "Classic Cigar Leave",
+    "description": "传统雪茄烟叶",
+    "price_cents": 48800,
+    "tags": [
+      "Shisha"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 160
+  },
+  {
+    "category": "shisha",
+    "name": "Premium Cigar Leave — 588",
+    "description": "特级雪茄叶",
+    "price_cents": 58800,
+    "tags": [
+      "Shisha"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 161
+  },
+  {
+    "category": "cocktails",
+    "name": "Virgin Mojito",
+    "description": "莫吉托（无酒精）",
+    "price_cents": 4800,
+    "tags": [
+      "Alcohol-free"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 162
+  },
+  {
+    "category": "cocktails",
+    "name": "Fruity Mojito",
+    "description": "果味莫吉托（无酒精）",
+    "price_cents": 5800,
+    "tags": [
+      "Alcohol-free"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 163
+  },
+  {
+    "category": "cocktails",
+    "name": "Coconada",
+    "description": "椰情海岸",
+    "price_cents": 4800,
+    "tags": [
+      "Alcohol-free"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 164
+  },
+  {
+    "category": "cocktails",
+    "name": "Shirley Temple",
+    "description": "秀兰邓波儿",
+    "price_cents": 2800,
+    "tags": [
+      "Alcohol-free"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 165
+  },
+  {
+    "category": "cocktails",
+    "name": "Fruity Punch",
+    "description": "水果宾治",
+    "price_cents": 4800,
+    "tags": [
+      "Alcohol-free"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 166
+  },
+  {
+    "category": "cocktails",
+    "name": "Virgin Piña Colada",
+    "description": "椰林飘香（无酒精）",
+    "price_cents": 5800,
+    "tags": [
+      "Alcohol-free"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 167
+  },
+  {
+    "category": "cocktails",
+    "name": "Sunset",
+    "description": "落日",
+    "price_cents": 4800,
+    "tags": [
+      "Alcohol-free"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 168
+  },
+  {
+    "category": "cocktails",
+    "name": "Blue Lemonade",
+    "description": "海王柠檬水",
+    "price_cents": 4800,
+    "tags": [
+      "Alcohol-free"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 169
+  },
+  {
+    "category": "cocktails",
+    "name": "Half Moon Bay Sauvignon Blanc — Glass",
+    "description": "新西兰马尔堡产区长相思白葡萄酒",
+    "price_cents": 4800,
+    "tags": [
+      "Wine by the glass"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 170
+  },
+  {
+    "category": "cocktails",
+    "name": "Venilterre Pinot Grigio — Glass",
+    "description": "威尼特尔灰皮诺干白葡萄酒",
+    "price_cents": 4800,
+    "tags": [
+      "Wine by the glass"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 171
+  },
+  {
+    "category": "cocktails",
+    "name": "Prosecco — Glass",
+    "description": "普罗塞克",
+    "price_cents": 5800,
+    "tags": [
+      "Wine by the glass"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 172
+  },
+  {
+    "category": "cocktails",
+    "name": "Barossa Valley Estate Shiraz — Glass",
+    "description": "巴罗萨谷酒庄西拉红葡萄酒",
+    "price_cents": 4800,
+    "tags": [
+      "Wine by the glass"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 173
+  },
+  {
+    "category": "cocktails",
+    "name": "Paradise Fish Reserve Cabernet Sauvignon — Glass",
+    "description": "天堂鱼珍藏赤霞珠干红葡萄酒",
+    "price_cents": 4500,
+    "tags": [
+      "Wine by the glass"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 174
+  },
+  {
+    "category": "cocktails",
+    "name": "Mulled Wine",
+    "description": "热红酒 · Winter season only",
+    "price_cents": 6800,
+    "tags": [
+      "Wine by the glass"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 175
+  },
+  {
+    "category": "cocktails",
+    "name": "Half Moon Bay Sauvignon Blanc — Bottle",
+    "description": "新西兰马尔堡产区长相思白葡萄酒",
+    "price_cents": 24800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 176
+  },
+  {
+    "category": "cocktails",
+    "name": "Louis Jadot Bourgogne Chardonnay — Bottle",
+    "description": "法国勃艮第白葡萄酒",
+    "price_cents": 58800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 177
+  },
+  {
+    "category": "cocktails",
+    "name": "Paradise Fish Chardonnay — Bottle",
+    "description": "天堂鱼霞多丽干白葡萄酒",
+    "price_cents": 28800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 178
+  },
+  {
+    "category": "cocktails",
+    "name": "Venilterre Pinot Grigio — Bottle",
+    "description": "威尼特尔灰皮诺干白葡萄酒",
+    "price_cents": 21800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 179
+  },
+  {
+    "category": "cocktails",
+    "name": "Prosecco — Bottle",
+    "description": "普罗塞克",
+    "price_cents": 28800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 180
+  },
+  {
+    "category": "cocktails",
+    "name": "Pirueta Gran Malbec — Bottle",
+    "description": "皮鲁埃塔马尔贝克干红葡萄酒",
+    "price_cents": 25800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 181
+  },
+  {
+    "category": "cocktails",
+    "name": "Chateau Preuillac Medoc Cru Bourgeois — Bottle",
+    "description": "普雷拉克酒庄梅多克中级庄干红葡萄酒",
+    "price_cents": 35800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 182
+  },
+  {
+    "category": "cocktails",
+    "name": "Barossa Valley Estate Shiraz — Bottle",
+    "description": "巴罗萨谷酒庄西拉红葡萄酒",
+    "price_cents": 28800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 183
+  },
+  {
+    "category": "cocktails",
+    "name": "Paradise Fish Reserve Cabernet Sauvignon — Bottle",
+    "description": "天堂鱼珍藏赤霞珠干红葡萄酒",
+    "price_cents": 19800,
+    "tags": [
+      "Wine by the bottle"
+    ],
+    "image": "",
+    "published": true,
+    "available": true,
+    "sort_order": 184
+  }
+]

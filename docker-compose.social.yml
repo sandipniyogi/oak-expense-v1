@@ -1,0 +1,20 @@
+services:
+  social-api:
+    build: ./services/social-api
+    image: ${STACK_NAME:-oak-expense-v1}-social-api:latest
+    environment:
+      PORT: 4500
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oak}:${POSTGRES_PASSWORD:-oaklocal}@db:5432/${POSTGRES_DB:-oak_expenses}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      SOCIAL_STORAGE_ROOT: /app/storage
+      SOCIAL_AGENT_TICK_MS: ${SOCIAL_AGENT_TICK_MS:-900000}
+    volumes:
+      - ${SOCIAL_STORAGE_DIR:-./storage/social}:/app/storage
+    ports:
+      - "${SOCIAL_API_HOST_PORT:-4500}:4500"
+    depends_on:
+      - db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

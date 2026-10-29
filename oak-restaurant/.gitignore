@@ -1,0 +1,13 @@
+node_modules/
+.env*
+data/
+backups/
+.preview/
+__pycache__/
+*.sqlite*
+
+.local-*.json
+.backup.lock
+.DS_Store
+._*
+release.json
