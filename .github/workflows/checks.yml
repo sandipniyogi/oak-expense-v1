@@ -1,0 +1,31 @@
+name: Project checks
+on:
+  push:
+    branches: [staging, main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: Source checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Expense automation tests
+        run: python3 -m unittest discover -s automation/tests
+      - name: Expense save and sync tests
+        run: node apps/api/src/automation-tests.cjs
+      - name: Restaurant tests
+        working-directory: restaurant
+        run: |
+          npm run check
+          npm test
+          python3 test/local.test.py
+          python3 test/router.test.py
