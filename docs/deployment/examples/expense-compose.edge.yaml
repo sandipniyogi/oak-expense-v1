@@ -1,0 +1,19 @@
+# REVIEW TEMPLATE — not a production-ready replacement.
+# Environment values were removed intentionally.
+services:
+  api:
+    networks:
+      default: null
+      edge:
+        aliases:
+        - oak-api
+  web:
+    networks:
+      default: null
+      edge:
+        aliases:
+        - oak-web
+networks:
+  edge:
+    external: true
+    name: oak-edge

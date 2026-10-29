@@ -1,0 +1,19 @@
+# REVIEW TEMPLATE — not a production-ready replacement.
+# Environment values were removed intentionally.
+name: oak-openvpn
+services:
+  openvpn:
+    image: openvpn/openvpn-as:latest
+    cap_add:
+    - NET_ADMIN
+    - MKNOD
+    devices:
+    - /dev/net/tun:/dev/net/tun
+    ports:
+    - 1194:1194/udp
+    - 127.0.0.1:943:943/tcp
+    volumes:
+    - ./data:/openvpn
+    restart: unless-stopped
+    logging:
+      driver: local

@@ -1,0 +1,18 @@
+# REVIEW TEMPLATE — not a production-ready replacement.
+# Environment values were removed intentionally.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+    - 80:80
+    - 443:443
+    volumes:
+    - ./conf:/etc/caddy:ro
+    - caddy_data:/data
+    - caddy_config:/config
+    logging:
+      driver: local
+volumes:
+  caddy_data: null
+  caddy_config: null
