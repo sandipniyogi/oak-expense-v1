@@ -1,0 +1,48 @@
+# REVIEW TEMPLATE — not a production-ready replacement.
+# Environment values were removed intentionally.
+services:
+  ocr:
+    build: ./services/ocr
+    restart: unless-stopped
+    volumes:
+    - ./storage/uploads:/app/uploads
+    logging:
+      driver: local
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    environment:
+      PORT: ${OAK_EXPENSE_COMPOSE_APP_SERVICES_API_ENVIRONMENT_PORT:?Set privately}
+      DATABASE_URL: ${OAK_EXPENSE_COMPOSE_APP_SERVICES_API_ENVIRONMENT_DATABASE_URL:?Set
+        privately}
+      OCR_URL: ${OAK_EXPENSE_COMPOSE_APP_SERVICES_API_ENVIRONMENT_OCR_URL:?Set privately}
+      UPLOAD_DIR: ${OAK_EXPENSE_COMPOSE_APP_SERVICES_API_ENVIRONMENT_UPLOAD_DIR:?Set
+        privately}
+    depends_on:
+      db:
+        condition: service_healthy
+      ocr:
+        condition: service_started
+    volumes:
+    - ./storage/uploads:/app/uploads
+    - ./storage/reports:/app/reports
+    logging:
+      driver: local
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${OAK_EXPENSE_COMPOSE_APP_SERVICES_WEB_BUILD_ARGS_NEXT_PUBLIC_API_URL:?Set
+          privately}
+        NEXT_PUBLIC_APP_ENV: ${OAK_EXPENSE_COMPOSE_APP_SERVICES_WEB_BUILD_ARGS_NEXT_PUBLIC_APP_ENV:?Set
+          privately}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${OAK_EXPENSE_COMPOSE_APP_SERVICES_WEB_ENVIRONMENT_NEXT_PUBLIC_API_URL:?Set
+        privately}
+      NEXT_PUBLIC_APP_ENV: ${OAK_EXPENSE_COMPOSE_APP_SERVICES_WEB_ENVIRONMENT_NEXT_PUBLIC_APP_ENV:?Set
+        privately}
+    depends_on:
+    - api
+    logging:
+      driver: local

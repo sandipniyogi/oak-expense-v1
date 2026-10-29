@@ -1,0 +1,35 @@
+# REVIEW TEMPLATE — not a production-ready replacement.
+# Environment values were removed intentionally.
+name: oak-vpn
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    cap_add:
+    - NET_ADMIN
+    environment:
+      PUID: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_PUID:?Set privately}
+      PGID: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_PGID:?Set privately}
+      TZ: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_TZ:?Set privately}
+      SERVERURL: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_SERVERURL:?Set
+        privately}
+      SERVERPORT: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_SERVERPORT:?Set
+        privately}
+      PEERS: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_PEERS:?Set privately}
+      PEERDNS: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_PEERDNS:?Set
+        privately}
+      INTERNAL_SUBNET: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_INTERNAL_SUBNET:?Set
+        privately}
+      ALLOWEDIPS: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_ALLOWEDIPS:?Set
+        privately}
+      LOG_CONFS: ${OAK_WIREGUARD_COMPOSE_SERVICES_WIREGUARD_ENVIRONMENT_LOG_CONFS:?Set
+        privately}
+    volumes:
+    - ./config:/config
+    ports:
+    - 51820:51820/udp
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: '1'
+      net.ipv4.ip_forward: '1'
+    restart: unless-stopped
+    logging:
+      driver: local

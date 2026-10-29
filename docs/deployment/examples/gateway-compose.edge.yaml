@@ -1,0 +1,6 @@
+# REVIEW TEMPLATE — not a production-ready replacement.
+# Environment values were removed intentionally.
+networks:
+  default:
+    external: true
+    name: oak-edge
