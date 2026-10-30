@@ -3,7 +3,8 @@ import pg from 'pg';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-const tables=['users','categories','merchants','expenses','oak_phone_saves'];
+import {expenseTables,assertExpenseSyncScope} from './expense-sync-scope.mjs';
+const tables=expenseTables;
 const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,max:1});
 const root=path.resolve(process.env.UPLOAD_DIR||'/app/uploads');
 function stable(v){if(Array.isArray(v))return '['+v.map(stable).join(',')+']';if(v&&typeof v==='object')return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}';return JSON.stringify(v);}
@@ -11,8 +12,7 @@ function sha(v){return crypto.createHash('sha256').update(v).digest('hex');}
 function safe(name){if(typeof name!=='string'||!name||name.length>255||name!==path.basename(name)||name==='.'||name==='..'||name.includes('\\')||name.includes('\0'))throw Error('Invalid attachment name');return path.join(root,name);}
 function refs(rows){const names=new Set();for(const row of Object.values(rows.expenses||{})){if(!row)continue;if(row.image_path)names.add(row.image_path);for(const p of row.ocr_raw?.combined_payments||[])if(p.image_path)names.add(p.image_path);}return [...names].sort();}
 async function snapshot(c){
- const extra=(await c.query("select tablename from pg_tables where schemaname='public' and tablename <> ALL($1)",[[...tables,'oak_sync_tombstones']])).rows;
- if(extra.length)throw Error('Untracked database tables; sync requires an explicit migration: '+extra.map(x=>x.tablename).join(','));
+ await assertExpenseSyncScope(c);
  const schema=(await c.query("select table_name,column_name,data_type,udt_name,is_nullable,column_default from information_schema.columns where table_schema='public' and table_name=ANY($1) order by table_name,ordinal_position",[tables])).rows;
  const rows={};for(const t of tables){rows[t]=Object.create(null);for(const r of (await c.query(`SELECT to_jsonb(t) AS row FROM "${t}" t ORDER BY id`)).rows)rows[t][r.row.id]=r.row;}
  for(const tomb of (await c.query('SELECT table_name,row_id FROM oak_sync_tombstones ORDER BY table_name,row_id')).rows)if(tables.includes(tomb.table_name)&&!Object.hasOwn(rows[tomb.table_name],tomb.row_id))rows[tomb.table_name][tomb.row_id]=null;
