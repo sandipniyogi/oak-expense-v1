@@ -1,3 +1,5 @@
+import {spendingReviewHandler} from './spending-review.mjs';
+import {pagination} from './expense-pagination.mjs';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -7,6 +9,7 @@ import path from 'path';
 import pg from 'pg';
 import ExcelJS from 'exceljs';
 import sharp from 'sharp';
+import {expenseReviewHandler} from './expense-review-proxy.mjs';
 
 const { Pool } = pg;
 const app = express();
@@ -54,6 +57,8 @@ async function normalizeUploadedImage(file) {
 
 app.use(cors());
 app.use(express.json());
+
+app.post('/expenses/review', expenseReviewHandler({pool}));
 
 app.get('/health', async (_req, res) => {
   const db = await pool.query('select now() as now');
@@ -261,8 +266,16 @@ app.post('/expenses/combined', async (req, res) => {
   finally { client.release(); }
 });
 
-app.get('/expenses', async (_req, res) => {
-  const q = await pool.query(`
+app.get('/expenses', async (req, res) => {
+  let paging;try{paging=pagination(req.query);}catch(e){return res.status(400).json({error:e.message});}
+  try{
+  if(req.query.focus_id){
+    if(!paging||!/^[-a-fA-F0-9]{36}$/.test(String(req.query.focus_id)))return res.status(400).json({error:'Invalid expense reference.'});
+    const position=await pool.query(`select position from (select id,row_number() over(order by coalesce(expense_date,created_at::date) desc,created_at desc,id desc) as position from expenses) ranked where id=$1`,[req.query.focus_id]);
+    if(!position.rows.length)return res.status(404).json({error:'This expense is no longer available. Refresh the report.'});
+    paging.page=Math.ceil(Number(position.rows[0].position)/paging.page_size);
+  }
+  const result=await pool.query(`
     select e.id,e.user_id,e.category_id,e.amount,e.currency,e.payment_method,e.expense_date,e.description,
       e.reimbursement_required,e.reimbursement_status,e.image_path,e.image_sha256,e.ocr_confidence,e.created_at,
       case when jsonb_typeof(e.ocr_raw->'combined_payments')='array' then jsonb_array_length(e.ocr_raw->'combined_payments') else 0 end as combined_count,
@@ -271,9 +284,12 @@ app.get('/expenses', async (_req, res) => {
     left join users u on u.id=e.user_id
     left join categories c on c.id=e.category_id
     left join merchants m on m.id=e.merchant_id
-    order by coalesce(e.expense_date, e.created_at::date) desc, e.created_at desc
-    limit 100`);
-  res.json(q.rows);
+    order by coalesce(e.expense_date, e.created_at::date) desc, e.created_at desc, e.id desc
+    limit $1 offset $2`,[paging?.page_size||100,paging?(paging.page-1)*paging.page_size:0]);
+  if(!paging)return res.json(result.rows);
+  const count=await pool.query('select count(*)::int as total from expenses');
+  res.json({rows:result.rows,total:count.rows[0].total,...paging});
+  }catch{res.status(500).json({error:'Could not load saved expenses. Please retry.'});}
 });
 
 // Update a saved expense in place. A replacement screenshot is first uploaded
@@ -433,6 +449,8 @@ app.get('/expenses/:id/screenshot', async (req, res) => {
   }
 });
 
+app.post('/reports/spending-review',spendingReviewHandler({getReport:getExpenseReport}));
+
 function parseReportFilters(query) {
   const paymentMethod = String(query.payment_method || 'all').toLowerCase();
   const from = query.from ? String(query.from) : '';
@@ -441,6 +459,8 @@ function parseReportFilters(query) {
   if (amount && (!/^\d{1,10}(?:\.\d{1,2})?$/.test(amount))) {
     throw Object.assign(new Error('Amount must be a non-negative number with at most two decimal places, for example 250.00.'), {status:400});
   }
+  const categoryId=query.category_id?String(query.category_id):'';
+  if(categoryId&&categoryId!=='uncategorized'&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(categoryId))throw Object.assign(new Error('Category must be a valid category ID.'),{status:400});
   const userId = query.user_id ? String(query.user_id) : '';
   if(userId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
     throw Object.assign(new Error('Paid by must be a valid user ID.'),{status:400});
@@ -476,6 +496,8 @@ function parseReportFilters(query) {
     return `$${params.length}`;
   };
 
+  if(categoryId==='uncategorized')filters.push('e.category_id is null');
+  else if(categoryId)filters.push(`e.category_id = ${addParam(categoryId)}::uuid`);
   if(amount) filters.push(`e.amount = ${addParam(amount)}::numeric`);
   if(userId) filters.push(`e.user_id = ${addParam(userId)}::uuid`);
   if (paymentMethod !== 'all') {
@@ -490,6 +512,7 @@ function parseReportFilters(query) {
 
   return {
     paymentMethod,
+    categoryId,
     amount,
     userId,
     from,
@@ -502,6 +525,13 @@ function parseReportFilters(query) {
 async function getExpenseReport(query) {
   const filter = parseReportFilters(query);
   const { params, whereSql } = filter;
+  let categoryName='All categories';
+  if(filter.categoryId==='uncategorized')categoryName='Uncategorized';
+  else if(filter.categoryId){
+    const category=await pool.query('select name from categories where id=$1',[filter.categoryId]);
+    if(!category.rows[0])throw Object.assign(new Error('Selected category was not found.'),{status:400});
+    categoryName=category.rows[0].name;
+  }
   let payerName='All people';
   if(filter.userId){
     const payer=await pool.query('select name from users where id=$1',[filter.userId]);
@@ -554,9 +584,20 @@ async function getExpenseReport(query) {
     order by coalesce(e.expense_date, e.created_at::date) desc, e.created_at desc
     limit 5000`;
 
-  const [summaryResult, rowsResult] = await Promise.all([
+  // Aggregate all matching expenses, independently of the 5,000 detail-row limit.
+  // Group by IDs as well as names so people/categories sharing names stay distinct.
+  const paidByCategorySql=`select e.user_id,e.category_id,
+    coalesce(u.name,'Unassigned') as paid_by,coalesce(c.name,'Uncategorized') as category,
+    coalesce(e.currency,'CNY') as currency,count(*)::int as transaction_count,
+    coalesce(sum(e.amount),0) as total_amount
+    from expenses e left join users u on u.id=e.user_id left join categories c on c.id=e.category_id
+    ${whereSql}
+    group by e.user_id,u.name,e.category_id,c.name,coalesce(e.currency,'CNY')
+    order by paid_by,category,currency`;
+  const [summaryResult, rowsResult, paidByCategoryResult] = await Promise.all([
     pool.query(summarySql, params),
-    pool.query(rowsSql, params)
+    pool.query(rowsSql, params),
+    pool.query(paidByCategorySql,params)
   ]);
 
   return {
@@ -565,12 +606,16 @@ async function getExpenseReport(query) {
       payment_method: filter.paymentMethod,
       user_id: filter.userId || null,
       paid_by: payerName,
+      category_id: filter.categoryId||null,
+      category: categoryName,
       amount: filter.amount || null,
       from: filter.from || null,
       to: filter.to || null
     },
     summary: summaryResult.rows[0],
-    rows: rowsResult.rows
+    rows: rowsResult.rows,
+    paid_by_category: paidByCategoryResult.rows,
+    details_limited:Number(summaryResult.rows[0].transaction_count)>rowsResult.rows.length
   };
 }
 
@@ -724,7 +769,7 @@ app.get('/reports/expenses.xlsx', async (req, res) => {
     sheet.getRow(1).height = 30;
 
     sheet.mergeCells('A2:J2');
-    sheet.getCell('A2').value = `${paymentLabel(report.filter.payment_method)} · Paid by: ${report.filter.paid_by}${report.filter.amount ? ` · Amount: CNY ${report.filter.amount}` : ''} · ${dates.start} → ${dates.end}`;
+    sheet.getCell('A2').value = `${paymentLabel(report.filter.payment_method)} · Paid by: ${report.filter.paid_by} · Category: ${report.filter.category||'All categories'}${report.filter.amount ? ` · Amount: CNY ${report.filter.amount}` : ''} · ${dates.start} → ${dates.end}`;
     sheet.getCell('A2').font = { bold: true, size: 11, color: { argb: excelColors.dark } };
     sheet.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
     sheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'left' };
@@ -795,7 +840,7 @@ app.get('/reports/expenses.xlsx', async (req, res) => {
           { name: 'Amount', totalsRowFunction: 'sum' },
           { name: 'Currency' },
           { name: 'Reimbursement' },
-          { name: 'Description' },
+          { name: 'Purpose / description' },
           { name: 'Payment screenshot' }
         ],
         rows: tableRows
@@ -978,7 +1023,7 @@ app.get('/reports/expenses.xlsx', async (req, res) => {
     categorySheet.getRow(1).height = 28;
 
     categorySheet.mergeCells('A2:H2');
-    categorySheet.getCell('A2').value = `${paymentLabel(report.filter.payment_method)} · Paid by: ${report.filter.paid_by}${report.filter.amount ? ` · Amount: CNY ${report.filter.amount}` : ''} · ${dates.start} → ${dates.end}`;
+    categorySheet.getCell('A2').value = `${paymentLabel(report.filter.payment_method)} · Paid by: ${report.filter.paid_by} · Category: ${report.filter.category||'All categories'}${report.filter.amount ? ` · Amount: CNY ${report.filter.amount}` : ''} · ${dates.start} → ${dates.end}`;
     categorySheet.getCell('A2').font = { bold: true, color: { argb: excelColors.dark } };
     categorySheet.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
 
@@ -1053,6 +1098,15 @@ app.get('/reports/expenses.xlsx', async (req, res) => {
     categoryWidths.forEach((width, index) => { categorySheet.getColumn(index + 1).width = width; });
     for (let col = 2; col <= 8; col += 1) categorySheet.getColumn(col).alignment = { horizontal: 'right', vertical: 'top' };
     categorySheet.headerFooter.oddFooter = `Oak Expense System · Category Summary · ${dates.start} to ${dates.end}`;
+
+    const payerCategorySheet=workbook.addWorksheet('Paid by Category');
+    payerCategorySheet.columns=[{header:'Paid by',key:'paid_by',width:24},{header:'Category',key:'category',width:28},{header:'Currency',key:'currency',width:12},{header:'Transactions',key:'transaction_count',width:16},{header:'Total paid',key:'total_amount',width:18}];
+    for(const group of report.paid_by_category)payerCategorySheet.addRow({...group,total_amount:Number(group.total_amount)});
+    payerCategorySheet.getRow(1).font={bold:true};
+    payerCategorySheet.getColumn('total_amount').numFmt='#,##0.00';
+    payerCategorySheet.views=[{state:'frozen',ySplit:1}];
+    payerCategorySheet.autoFilter={from:'A1',to:'E1'};
+    if(report.details_limited)payerCategorySheet.addRow({paid_by:'Note: detail sheets are limited to 5,000 expenses; this grouping includes every matching expense.'});
 
     // Individual evidence for combined expenses; values here are not added to totals.
     const combinedRows = report.rows.filter(row=>Array.isArray(row.ocr_raw?.combined_payments));

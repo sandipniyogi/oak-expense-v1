@@ -3,17 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import styles from '../inventory.module.css';
 
-function apiBase(){
-  return typeof window !== 'undefined' && window.location.port === '3100'
-    ? 'http://localhost:4300'
-    : 'http://localhost:4200';
-}
+function apiBase(){ return '/module-api/inventory'; }
 
-function aiBase(){
-  return typeof window !== 'undefined' && window.location.port === '3100'
-    ? 'http://localhost:4400'
-    : 'http://localhost:4401';
-}
+function aiBase(){ return '/module-api/ai'; }
 
 function emptyProduct(){
   return {

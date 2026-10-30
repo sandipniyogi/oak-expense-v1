@@ -2,6 +2,10 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import BatchExpenses from './BatchExpenses';
 import CombinedExpenses from './CombinedExpenses';
+import ExpenseReview from './ExpenseReview';
+import SpendingReview from './SpendingReview';
+import PaidByCategorySummary from './PaidByCategorySummary';
+import {expenseReviewEvidence} from './expenseReviewEvidence.mjs';
 import { expenseApiBase } from './expenseApi';
 
 const API = expenseApiBase();
@@ -52,6 +56,10 @@ function normalizedCategory(value) {
 }
 
 export default function Home() {
+  const [aiReview,setAiReview]=useState(null);
+  const [confirmedFields,setConfirmedFields]=useState('');
+  const [captureVersion,setCaptureVersion]=useState(0);
+
   const [meta,setMeta]=useState({users:[],categories:[]});
   const [captureMode,setCaptureMode]=useState('ocr');
   const [file,setFile]=useState(null);
@@ -61,6 +69,10 @@ export default function Home() {
   const [message,setMessage]=useState('');
   const [data,setData]=useState(null);
   const [expenses,setExpenses]=useState([]);
+  const [savedPage,setSavedPage]=useState(1),[savedSize,setSavedSize]=useState(25),[savedTotal,setSavedTotal]=useState(0),[savedBusy,setSavedBusy]=useState(false),[savedError,setSavedError]=useState('');
+  const savedRequest=useRef(0);
+  const savedPages=Math.max(1,Math.ceil(savedTotal/savedSize));
+  const [payerView,setPayerView]=useState(true);
   const [form,setForm]=useState({user_id:'',category_id:'',amount:'',merchant:'',payment_method:'',expense_date:'',description:'',reimbursement_required:false});
 
   const [editingId,setEditingId]=useState(null);
@@ -70,7 +82,7 @@ export default function Home() {
   const [editBusy,setEditBusy]=useState(false);
   const [editMessage,setEditMessage]=useState('');
 
-  const [reportFilters,setReportFilters]=useState({payment_method:'all',user_id:'',amount:'',from:'',to:''});
+  const [reportFilters,setReportFilters]=useState({payment_method:'all',user_id:'',category_id:'',amount:'',from:'',to:''});
   const [report,setReport]=useState(null);
   const [reportBusy,setReportBusy]=useState(false);
   const [reportMessage,setReportMessage]=useState('');
@@ -133,10 +145,20 @@ export default function Home() {
     selectScreenshot(dropped[0]);
   }
 
-  const load = async()=>{
-    const [m,e]=await Promise.all([fetch(`${API}/meta`).then(r=>r.json()),fetch(`${API}/expenses`).then(r=>r.json())]);
-    setMeta(m); setExpenses(e);
-    if(!form.user_id && m.users[0]) setForm(f=>({...f,user_id:m.users[0].id}));
+  const load = async(page=savedPage,size=savedSize,focusId=null)=>{
+    const request=++savedRequest.current;setSavedBusy(true);setSavedError('');
+    try{
+      const [mr,er]=await Promise.all([fetch(`${API}/meta`),fetch(`${API}/expenses?page=${page}&page_size=${size}${focusId?`&focus_id=${encodeURIComponent(focusId)}`:''}`)]);
+      if(!mr.ok||!er.ok){const error=await er.json().catch(()=>({}));throw Error(error.error||'Could not load saved expenses. Retry below.');}
+      const [m,e]=await Promise.all([mr.json(),er.json()]);
+      if(request!==savedRequest.current)return;
+      const last=Math.max(1,Math.ceil(e.total/size));
+      if(e.page>last)return await load(last,size);
+      setMeta(m);setExpenses(e.rows);setSavedTotal(e.total);setSavedPage(e.page);setSavedSize(size);
+      if(!form.user_id && m.users[0])setForm(f=>({...f,user_id:m.users[0].id}));
+      return e.rows;
+    }catch(error){if(request===savedRequest.current)setSavedError(error.message);}
+    finally{if(request===savedRequest.current)setSavedBusy(false);}
   };
 
   async function generateReport(filters=reportFilters){
@@ -146,6 +168,7 @@ export default function Home() {
       params.set('payment_method',filters.payment_method||'all');
       if(filters.amount.trim()) params.set('amount',filters.amount.trim());
       if(filters.user_id) params.set('user_id',filters.user_id);
+      if(filters.category_id)params.set('category_id',filters.category_id);
       if(filters.from) params.set('from',filters.from);
       if(filters.to) params.set('to',filters.to);
 
@@ -171,8 +194,11 @@ export default function Home() {
     if(reportPage>reportTotalPages) setReportPage(reportTotalPages);
   },[reportPage,reportTotalPages]);
 
+  useEffect(()=>{setAiReview(null);setConfirmedFields('');setCaptureVersion(v=>v+1);},[file,captureMode]);
+
   async function runOcr(){
     if(!file) return;
+    setAiReview(null);setConfirmedFields('');setCaptureVersion(v=>v+1);
     setBusy(true); setMessage('Reading screenshot…');
     const fd=new FormData(); fd.append('file',file);
     try{
@@ -222,6 +248,8 @@ export default function Home() {
   }
 
   async function save(){
+    if(captureMode==='manual'&&!form.description.trim()){setMessage('Please explain what this expense was used for.');return;}
+    if(captureMode==='manual'&&confirmedFields!==JSON.stringify(form)){setMessage('Please review the current expense fields and tick the confirmation before saving.');return;}
     setBusy(true); setMessage(captureMode==='manual'?'Uploading screenshot and saving expense…':'Saving expense…');
     try{
       let savedData=data;
@@ -239,13 +267,11 @@ export default function Home() {
         image_path:savedData?.image_path,
         image_sha256:savedData?.image_sha256,
         ocr_confidence:captureMode==='manual'?null:savedData?.ocr_confidence,
-        ocr_raw:captureMode==='manual'
-          ? {source:'manual',payment_source:'other_app',original_filename:file?.name||null}
-          : (savedData||{})
+        ocr_raw:expenseReviewEvidence({captureMode,savedData,filename:file?.name,form,aiReview})
       };
       const r=await fetch(`${API}/expenses`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'Save failed');
-      setMessage(captureMode==='manual'?'Manual expense saved with screenshot.':'Expense saved.'); setData(null); setFile(null);
+      setMessage(captureMode==='manual'?'Manual expense saved with screenshot.':'Expense saved.'); setData(null); setFile(null);setAiReview(null);setConfirmedFields('');
       setForm(f=>({...f,category_id:'',amount:'',merchant:'',payment_method:captureMode==='manual'?'other':'',expense_date:'',description:'',reimbursement_required:false}));
       await Promise.all([load(),generateReport(reportFilters)]);
     }catch(e){setMessage(e.message)}finally{setBusy(false)}
@@ -266,6 +292,21 @@ export default function Home() {
     setEditScreenshot(null);
     setEditRemoveScreenshot(false);
     setEditMessage('Edit the values below. You can also replace or remove the saved screenshot.');
+  }
+
+  async function reviewPayment(expense){
+    if(editingId){setReportMessage('Save or close the current expense editor first.');return;}
+    const rows=await load(1,savedSize,expense.id);
+    const selected=rows?.find(row=>row.id===expense.id);
+    if(selected){
+      if(!selected.combined_count)startEdit(selected);
+      else setSavedError('Combined payment: review its screenshots below. Editing combined entries is not supported yet.');
+      document.getElementById('saved-expenses')?.scrollIntoView({behavior:'smooth'});
+    }else setReportMessage('Could not open this payment. Check Saved expenses for details and retry.');
+  }
+  function backToReport(){
+    if(editingId&&!window.confirm('Close this editor and discard unsaved changes?'))return;
+    cancelEdit();document.getElementById('expense-report')?.scrollIntoView({behavior:'smooth'});
   }
 
   function cancelEdit(){
@@ -379,6 +420,7 @@ export default function Home() {
       params.set('payment_method',applied.payment_method||'all');
       if(applied.amount != null) params.set('amount',applied.amount);
       if(applied.user_id) params.set('user_id',applied.user_id);
+      if(applied.category_id)params.set('category_id',applied.category_id);
       if(applied.from) params.set('from',applied.from);
       if(applied.to) params.set('to',applied.to);
 
@@ -406,7 +448,7 @@ export default function Home() {
   function downloadReportCsv(){
     if(!report?.rows?.length) return;
 
-    const headers=['Date','Paid by','Merchant','Category','Payment method','Amount','Currency','Reimbursement','Description'];
+    const headers=['Date','Paid by','Merchant','Category','Payment method','Amount','Currency','Reimbursement','Purpose / description'];
     const totalAmount=Number(report.summary?.total_amount||0).toFixed(2);
     const currency=report.rows[0]?.currency||'CNY';
     const lines=[
@@ -500,11 +542,15 @@ export default function Home() {
           <label>Payment<select value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}><option value="">Unknown</option><option value="wechat">WeChat</option><option value="alipay">Alipay</option><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other app</option></select></label>
           <label>Paid by<select value={form.user_id} onChange={e=>setForm({...form,user_id:e.target.value})}>{meta.users.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
           <label>Category<select value={form.category_id} onChange={e=>setForm({...form,category_id:e.target.value})}><option value="">Select</option>{meta.categories.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-          <label className="wide">Description<input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Optional note"/></label>
+          {captureMode==='manual'
+            ? <label className="wide">What was this expense for? <span>(required)</span><textarea rows="3" maxLength="2000" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="For example: lemons and mint for cocktails"/></label>
+            : <label className="wide">Description<input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Optional note"/></label>}
           <label className="check wide"><input type="checkbox" checked={form.reimbursement_required} onChange={e=>setForm({...form,reimbursement_required:e.target.checked})}/> Personal money — reimbursement required</label>
         </div>
+        {captureMode==='manual'&&<ExpenseReview key={captureVersion} api={API} form={form} file={file} ocr={data} categories={meta.categories} busy={busy} review={aiReview} onReview={setAiReview} onAttachment={setData} onField={(field,value)=>setForm(f=>({...f,[field]:value}))}/>}
+        {captureMode==='manual'&&<label className="check wide"><input type="checkbox" checked={confirmedFields===JSON.stringify(form)} disabled={busy} onChange={e=>setConfirmedFields(e.target.checked?JSON.stringify(form):'')}/> I checked the amount, vendor, date, payer, category and expense purpose against the available evidence.</label>}
         {captureMode==='ocr'&&data?.ocr_confidence!=null&&<div className="confidence">OCR confidence: {data.ocr_confidence}%</div>}
-        <button className="primary" disabled={busy||!form.user_id||!form.amount||(captureMode==='manual'&&!file&&!data?.image_path)} onClick={save}>{captureMode==='manual'?'Save manual expense':'Save expense'}</button>
+        <button className="primary" disabled={busy||(captureMode==='manual'&&(!form.description.trim()||confirmedFields!==JSON.stringify(form)))||!form.user_id||!form.amount||(captureMode==='manual'&&!file&&!data?.image_path)} onClick={save}>{captureMode==='manual'?'Save manual expense':'Save expense'}</button>
       </div>
     </section>
 
@@ -528,8 +574,9 @@ export default function Home() {
           <button disabled={reportBusy} onClick={()=>applyQuickRange('all')}>All time</button>
         </div>
         <label>Paid by<select value={reportFilters.user_id} disabled={reportBusy} onChange={e=>{const next={...reportFilters,user_id:e.target.value};setReportFilters(next);generateReport(next);}} style={{display:'block',marginTop:5,border:'1px solid #d6d0c5',borderRadius:10,padding:10,background:'#fff',fontSize:16,maxWidth:'100%'}}><option value="">All people</option>{(meta.report_users||meta.users).map(person=><option key={person.id} value={person.id}>{person.name}{person.active===false?' (inactive)':''}</option>)}</select></label>
+        <label>Expense category<select value={reportFilters.category_id} disabled={reportBusy} onChange={e=>{const next={...reportFilters,category_id:e.target.value};setReportFilters(next);generateReport(next);}}><option value="">All categories</option><option value="uncategorized">Uncategorized</option>{meta.categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         <label>Exact amount (CNY)<input type="text" inputMode="decimal" placeholder="e.g. 250.00" value={reportFilters.amount} disabled={reportBusy} onChange={e=>setReportFilters({...reportFilters,amount:e.target.value})} onKeyDown={e=>{if(e.key==='Enter') generateReport(reportFilters);}}/><small>Leave blank for all amounts. Search matches the saved expense total.</small></label>
-        <button disabled={reportBusy} onClick={()=>{const next={...reportFilters,user_id:'',amount:''};setReportFilters(next);generateReport(next);}}>Clear person / amount</button>
+        <button disabled={reportBusy} onClick={()=>{const next={...reportFilters,user_id:'',category_id:'',amount:''};setReportFilters(next);generateReport(next);}}>Clear person / category / amount</button>
         <label>Start date<input type="date" value={reportFilters.from} onChange={e=>setReportFilters({...reportFilters,from:e.target.value})}/></label>
         <label>End date<input type="date" value={reportFilters.to} onChange={e=>setReportFilters({...reportFilters,to:e.target.value})}/></label>
         <button className="generate-button" disabled={reportBusy} onClick={()=>generateReport(reportFilters)}>{reportBusy?'Generating…':'Generate report'}</button>
@@ -542,7 +589,7 @@ export default function Home() {
 
       {report&&<>
         <div className="simple-report-period">
-          <div><span>Report type</span><strong>{paymentLabel(report.filter.payment_method)}</strong><small style={{display:'block',marginTop:5}}>Paid by: {report.filter.paid_by||'All people'}</small>{report.filter.amount!=null&&<small style={{display:'block',marginTop:5}}>Exact amount: {money(report.filter.amount)}</small>}</div>
+          <div><span>Report type</span><strong>{paymentLabel(report.filter.payment_method)}</strong><small style={{display:'block',marginTop:5}}>Paid by: {report.filter.paid_by||'All people'}</small><small style={{display:'block',marginTop:5}}>Category: {report.filter.category||'All categories'}</small>{report.filter.amount!=null&&<small style={{display:'block',marginTop:5}}>Exact amount: {money(report.filter.amount)}</small>}</div>
           <div><span>Start date</span><strong>{reportStartDate}</strong></div>
           <div><span>End date</span><strong>{reportEndDate}</strong></div>
         </div>
@@ -557,6 +604,11 @@ export default function Home() {
           <div className="simple-stat-card"><span>WeChat</span><strong>{money(report.summary.wechat_total)}</strong><small>{report.summary.wechat_count} transaction{Number(report.summary.wechat_count)===1?'':'s'}</small></div>
           <div className="simple-stat-card"><span>Alipay</span><strong>{money(report.summary.alipay_total)}</strong><small>{report.summary.alipay_count} transaction{Number(report.summary.alipay_count)===1?'':'s'}</small></div>
         </div>
+
+        {reportFilters.user_id&&<button type="button" disabled={reportBusy} onClick={()=>{const next={...reportFilters,user_id:''};setReportFilters(next);setTransactionSearch('');generateReport(next);}}>← Back to all people</button>}
+        <button type="button" aria-expanded={payerView} onClick={()=>setPayerView(v=>!v)}>{payerView?'Hide Paid by summary':'Paid by — who paid what'}</button>
+        {payerView&&<PaidByCategorySummary groups={report.paid_by_category||[]} detailsLimited={report.details_limited} onSelect={id=>{const next={...reportFilters,user_id:id||''};setReportFilters(next);generateReport(next);}} busy={reportBusy}/>}
+        <SpendingReview key={JSON.stringify(report.filter)+report.generated_at} api={API} filter={report.filter} onReview={reviewPayment} busy={reportBusy||savedBusy||editBusy}/>
 
         <div className="report-table-heading"><div><span className="eyebrow">DETAIL</span><h3>Transactions</h3></div><span>{detailRows.length} matching records · {money(detailTotal)}</span></div>
 
@@ -583,10 +635,10 @@ export default function Home() {
           </label>
         </div>
 
-        <div className="tablewrap report-table screen-report-table"><table><thead><tr><th>Date</th><th>Paid by</th><th>Merchant</th><th>Category</th><th>Method</th><th>Amount</th><th>Reimburse</th><th>Description</th></tr></thead><tbody>
-          {reportPageRows.map(e=><tr key={e.id}><td>{expenseDate(e)||'—'}</td><td>{e.paid_by||'—'}</td><td>{e.merchant||'—'}</td><td>{e.category||'—'}</td><td><span className={`method-pill ${String(e.payment_method||'other').toLowerCase()}`}>{paymentLabel(e.payment_method)}</span></td><td className="money">{money(e.amount)}</td><td>{e.reimbursement_required?(e.reimbursement_status||'Pending'):'—'}</td><td>{e.description||'—'}</td></tr>)}
-          {!detailRows.length&&<tr><td colSpan="8" className="empty">No transactions match. Clear the search or change the report filters.</td></tr>}
-        </tbody>{detailRows.length>0&&<tfoot><tr className="report-total-row"><td colSpan="5">MATCHING TOTAL · {reportStartDate} → {reportEndDate}</td><td className="money">{money(detailTotal)}</td><td colSpan="2"></td></tr></tfoot>}</table></div>
+        <div className="tablewrap report-table screen-report-table"><table><thead><tr><th>Date</th><th>Paid by</th><th>Merchant</th><th>Category</th><th>Method</th><th>Amount</th><th>Reimburse</th><th>Purpose / description</th><th className="no-print">Review</th></tr></thead><tbody>
+          {reportPageRows.map(e=><tr key={e.id}><td>{expenseDate(e)||'—'}</td><td>{e.paid_by||'—'}</td><td>{e.merchant||'—'}</td><td>{e.category||'—'}</td><td><span className={`method-pill ${String(e.payment_method||'other').toLowerCase()}`}>{paymentLabel(e.payment_method)}</span></td><td className="money">{money(e.amount)}</td><td>{e.reimbursement_required?(e.reimbursement_status||'Pending'):'—'}</td><td>{e.description||'—'}</td><td className="no-print"><button disabled={savedBusy||editBusy} onClick={()=>reviewPayment(e)}>Review / edit</button></td></tr>)}
+          {!detailRows.length&&<tr><td colSpan="9" className="empty">No transactions match. Clear the search or change the report filters.</td></tr>}
+        </tbody>{detailRows.length>0&&<tfoot><tr className="report-total-row"><td colSpan="5">MATCHING TOTAL · {reportStartDate} → {reportEndDate}</td><td className="money">{money(detailTotal)}</td><td colSpan="3"></td></tr></tfoot>}</table></div>
 
         {detailRows.length>0&&<div className="pagination-controls no-print">
           <button disabled={reportCurrentPage<=1} onClick={()=>setReportPage(1)}>First</button>
@@ -596,20 +648,30 @@ export default function Home() {
           <button disabled={reportCurrentPage>=reportTotalPages} onClick={()=>setReportPage(reportTotalPages)}>Last</button>
         </div>}
 
-        <div className="print-only-report-table"><table><thead><tr><th>Date</th><th>Paid by</th><th>Merchant</th><th>Category</th><th>Method</th><th>Amount</th><th>Reimburse</th><th>Description</th></tr></thead><tbody>
+        <div className="print-only-report-table"><table><thead><tr><th>Date</th><th>Paid by</th><th>Merchant</th><th>Category</th><th>Method</th><th>Amount</th><th>Reimburse</th><th>Purpose / description</th></tr></thead><tbody>
           {reportRows.map(e=><tr key={`print-${e.id}`}><td>{expenseDate(e)||'—'}</td><td>{e.paid_by||'—'}</td><td>{e.merchant||'—'}</td><td>{e.category||'—'}</td><td>{paymentLabel(e.payment_method)}</td><td className="money">{money(e.amount)}</td><td>{e.reimbursement_required?(e.reimbursement_status||'Pending'):'—'}</td><td>{e.description||'—'}</td></tr>)}
         </tbody>{reportRows.length>0&&<tfoot><tr className="report-total-row"><td colSpan="5">TOTAL · {reportStartDate} → {reportEndDate}</td><td className="money">{money(report.summary.total_amount)}</td><td colSpan="2"></td></tr></tfoot>}</table></div>
       </>}
     </section>
 
     <section id="saved-expenses" className="card tablecard recent-card">
-      <div className="row"><div><h2>Saved expenses</h2><p className="section-note">Edit values, replace/remove screenshots, or delete an incorrect record directly here.</p></div><span>{expenses.length} records</span></div>
+      <div className="row"><div><h2>Saved expenses</h2><button type="button" disabled={editBusy} onClick={backToReport}>← Back to payment report</button><p className="section-note">Edit values, replace/remove screenshots, or delete an incorrect record directly here.</p></div><span>{savedTotal} records · Page {savedPage} of {savedPages}</span></div>
+      {savedError&&<p role="alert">{savedError} <button onClick={()=>load()}>Retry</button></p>}
+      <nav aria-label="Saved expense pages" className="row" style={{flexWrap:'wrap',gap:10,marginBottom:12}}>
+        <label>Rows per page <select value={savedSize} disabled={savedBusy||editBusy||!!editingId} onChange={e=>load(1,Number(e.target.value))}>{[10,25,50,100].map(n=><option key={n} value={n}>{n}</option>)}</select></label>
+        <button disabled={savedBusy||editBusy||!!editingId||savedPage<=1} onClick={()=>load(1)}>First</button>
+        <button disabled={savedBusy||editBusy||!!editingId||savedPage<=1} onClick={()=>load(savedPage-1)}>Previous</button>
+        <span aria-live="polite">{savedBusy?'Loading…':`${savedTotal?((savedPage-1)*savedSize+1):0}–${Math.min(savedPage*savedSize,savedTotal)} of ${savedTotal}`}</span>
+        <button disabled={savedBusy||editBusy||!!editingId||savedPage>=savedPages} onClick={()=>load(savedPage+1)}>Next</button>
+        <button disabled={savedBusy||editBusy||!!editingId||savedPage>=savedPages} onClick={()=>load(savedPages)}>Last</button>
+      </nav>
+      {editingId&&<p className="message">Save or close the editor before changing pages.</p>}
       <div className="tablewrap"><table className="saved-expenses-table"><thead><tr><th>Date</th><th>Paid by</th><th>Merchant</th><th>Category</th><th>Method</th><th>Amount</th><th>Reimburse</th><th>Screenshot</th><th>Actions</th></tr></thead><tbody>
         {expenses.map(e=><Fragment key={e.id}>
           <tr className={editingId===e.id?'selected-expense-row':''}>
             <td>{expenseDate(e)||'—'}</td><td>{e.paid_by||'—'}</td><td>{e.merchant||'—'}</td><td>{e.category||'—'}</td><td>{paymentLabel(e.payment_method)}</td><td className="money">{money(e.amount)}</td><td>{e.reimbursement_required?(e.reimbursement_status||'Pending'):'—'}</td>
             <td>{e.combined_count>0 ? <div className="screenshot-actions">{Array.from({length:e.combined_count},(_,i)=><a key={i} className="text-link" href={`${API}/expenses/${e.id}/combined-screenshot/${i}`} target="_blank" rel="noreferrer">View {i+1}</a>)}</div> : e.image_path?<a className="text-link" href={`${API}/expenses/${e.id}/screenshot`} target="_blank" rel="noreferrer">View</a>:<span className="muted">None</span>}</td>
-            <td><div className="row-actions"><button disabled={editBusy||e.combined_count>0} title={e.combined_count>0?"Combined entries cannot be edited yet":undefined} onClick={()=>startEdit(e)}>Edit</button><button className="danger-button" disabled={editBusy} onClick={()=>deleteExpense(e)}>Delete</button></div></td>
+            <td><div className="row-actions"><button disabled={savedBusy||editBusy||e.combined_count>0} title={e.combined_count>0?"Combined entries cannot be edited yet":undefined} onClick={()=>startEdit(e)}>Edit</button><button className="danger-button" disabled={savedBusy||editBusy} onClick={()=>deleteExpense(e)}>Delete</button></div></td>
           </tr>
           {editingId===e.id&&editForm&&<tr className="expense-editor-row"><td colSpan="9">
             <div className="expense-editor">

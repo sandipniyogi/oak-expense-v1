@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import styles from '../inventory.module.css';
 
-function apiBase(){ return typeof window !== 'undefined' && window.location.port === '3100' ? 'http://localhost:4300' : 'http://localhost:4200'; }
+function apiBase(){ return '/module-api/inventory'; }
 
 export default function BatchLabels(){
   const [data,setData]=useState(null); const [message,setMessage]=useState(''); const [query,setQuery]=useState(''); const [category,setCategory]=useState('ALL'); const [selected,setSelected]=useState({});

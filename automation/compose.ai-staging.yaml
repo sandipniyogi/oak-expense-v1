@@ -1,0 +1,6 @@
+# Add only to Mac staging when testing expense AI assistance.
+services:
+  api:
+    environment:
+      OAK_EXPENSE_AI_ENABLED: "1"
+      OAK_AI_URL: http://oak-ai:4400

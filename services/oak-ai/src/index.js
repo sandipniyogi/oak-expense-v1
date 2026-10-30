@@ -1,11 +1,13 @@
+import {reviewSpending} from './spending-review.mjs';
 import express from 'express';
 import cors from 'cors';
+import {reviewExpense} from './expense-review.mjs';
 
 const app = express();
 const PORT = Number(process.env.PORT || 4400);
 const OLLAMA_URL = String(process.env.OLLAMA_URL || 'http://host.docker.internal:11434').replace(/\/$/, '');
 const MODEL = process.env.OLLAMA_MODEL || 'qwen3:8b';
-const BUILD = 'oak-local-ai-v2-operations';
+const BUILD = 'oak-local-ai-v3-expense-review';
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
@@ -72,6 +74,12 @@ async function healthPayload() {
 app.get('/health', async (_req, res) => {
   const h = await healthPayload();
   res.status(h.ok ? 200 : 503).json(h);
+});
+
+app.post('/spending-review',async(req,res,next)=>{try{res.json(await reviewSpending(req.body,{ollama,model:MODEL}));}catch(e){next(e);}});
+app.post('/expense-review', async (req,res,next) => {
+  try { res.json(await reviewExpense(req.body,{ollama,model:MODEL})); }
+  catch(error) { next(error); }
 });
 
 app.post('/product-proposal', async (req, res, next) => {
