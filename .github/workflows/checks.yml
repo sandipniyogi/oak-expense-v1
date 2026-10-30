@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Expense AI review tests
+        run: node --test services/oak-ai/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/expenseReviewEvidence.test.mjs apps/web/test/manualScreenshotReview.test.mjs apps/web/test/batchReview.test.mjs apps/api/test/payer-category-report.test.cjs
       - name: Expense automation tests
         run: python3 -m unittest discover -s automation/tests
       - name: Expense save and sync tests

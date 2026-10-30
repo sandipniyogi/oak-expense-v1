@@ -171,3 +171,6 @@
   .expense-home .fields .wide{grid-column:auto}
   .expense-home .combined-zoom label{flex-basis:130px}
 }
+
+/* Expense purpose and human review controls. */
+.fields textarea{display:block;width:100%;max-width:100%;margin-top:6px;border:1px solid #d6d0c5;border-radius:11px;padding:12px;background:#fff;font:inherit;font-size:16px;color:#222;resize:vertical}.ai-expense-review h3{font-size:18px;margin:0 0 10px}.ai-expense-review li{margin:8px 0;overflow-wrap:anywhere}.ai-expense-review button{min-height:44px;max-width:100%;white-space:normal}.ai-expense-review p{overflow-wrap:anywhere}

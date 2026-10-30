@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import styles from '../inventory.module.css';
 
-function apiBase(){ return typeof window !== 'undefined' && window.location.port === '3100' ? 'http://localhost:4300' : 'http://localhost:4200'; }
+function apiBase(){ return '/module-api/inventory'; }
 
 export default function InventoryScan(){
   const [code,setCode]=useState(''); const [result,setResult]=useState(null); const [message,setMessage]=useState(''); const [busy,setBusy]=useState(false); const [cameraOn,setCameraOn]=useState(false); const [products,setProducts]=useState([]); const [assignProduct,setAssignProduct]=useState('');

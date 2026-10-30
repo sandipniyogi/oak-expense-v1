@@ -1,6 +1,9 @@
 'use client';
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {expenseApiBase,newUploadId} from './expenseApi';
+import {combinedSummary,combinedValidation,saveCombined} from './combinedSave.mjs';
+import CombinedExpenseReview from './CombinedExpenseReview';
+import {combinedReviewKey} from './combinedReview.mjs';
 const API=expenseApiBase();
 function ImagePreview({file}){
   const [url,setUrl]=useState('');
@@ -21,12 +24,13 @@ function ImagePreview({file}){
     <p className="message">Use the controls to enlarge the screenshot, then scroll inside the image to inspect it.</p>
   </div>;
 }
-function cents(value){const s=String(value??'').trim();if(!/^\d+(?:\.\d{1,2})?$/.test(s))return null;const [w,f='']=s.split('.');const n=Number(w)*100+Number((f+'00').slice(0,2));return Number.isSafeInteger(n)&&n>0?n:null;}
 export default function CombinedExpenses({meta,onSaved}){
+  const saving=useRef(false);
   const [parts,setParts]=useState([]),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[locked,setLocked]=useState(false);
   const [form,setForm]=useState({user_id:'',merchant:'',category_id:'',payment_method:'',expense_date:'',description:'',reimbursement_required:false});
+  const [aiReview,setAiReview]=useState(null);
   const change=(id,fields)=>setParts(old=>old.map(p=>p.id===id?{...p,...fields}:p));
-  const add=files=>{const f=Array.from(files||[]);if(parts.length+f.length>20){setNotice('Choose no more than 20 screenshots for one combined expense.');return;}setParts(old=>[...old,...f.map(file=>({id:newUploadId(),file,status:'waiting',amounts:[''],expense_date:'',data:null}))]);setNotice('Read the screenshots and review each amount before combining.');};
+  const add=files=>{const f=Array.from(files||[]);if(parts.length+f.length>20){setNotice('Choose no more than 20 screenshots for one combined expense.');return;}setParts(old=>[...old,...f.map(file=>({id:newUploadId(),file,status:'waiting',amounts:[''],expense_date:'',data:null}))]);setNotice('Read screenshots to suggest details, or enter amounts manually. Save will attach any screenshots that are not uploaded yet.');};
   async function processParts(){
     setBusy(true);let latest=form.expense_date;let merchant=form.merchant;let method=form.payment_method;let suggestedPayer=form.user_id||meta.users[0]?.id||'';
     for(const p of parts.filter(x=>x.status==='waiting'||x.status==='error')){
@@ -43,27 +47,30 @@ export default function CombinedExpenses({meta,onSaved}){
     setForm(old=>({...old,user_id:suggestedPayer,merchant,expense_date:latest,payment_method:method}));setNotice('Review each amount, the vendor, payer and payment method. Adjust the combined date if needed.');setBusy(false);
   }
   async function manual(p){setBusy(true);try{const fd=new FormData();fd.append('file',p.file);const r=await fetch(`${API}/attachments`,{method:'POST',body:fd});const d=await r.json();if(!r.ok)throw new Error(d.error||'Upload failed');change(p.id,{status:'ready',data:d,error:''});}catch(e){change(p.id,{status:'error',error:e.message});}setBusy(false);}
-  const values=parts.flatMap(p=>p.amounts.map(cents));const total=values.every(x=>x!==null)?values.reduce((a,b)=>a+b,0):null;
+  const {count,total}=combinedSummary(parts);
   async function save(){
-    if(!parts.length||values.length<2||parts.some(p=>p.status!=='ready')||!form.user_id||!form.merchant.trim()||!form.payment_method||total===null){setNotice('Choose at least one ready screenshot and enter at least two valid amounts, the vendor, payer and payment method.');return;}
-    if(parts.some(p=>p.data?.duplicate)){setNotice('A payment is already saved. Remove it or check the saved expenses before combining.');return;}
-    if(!window.confirm(`Save ${values.length} payments as one expense of ¥${(total/100).toFixed(2)} for ${form.merchant}? Confirm that the vendor, payer and payment method apply to all payments.`))return;
-    setBusy(true);setNotice('Saving combined expense…');
+    if(saving.current||busy||locked)return;
+    const invalid=combinedValidation(parts,form);
+    if(invalid){setNotice(invalid);return;}
+    if(!window.confirm(`Save ${count} payments as one expense of ¥${(total/100).toFixed(2)} for ${form.merchant}? Confirm every amount, category, purpose, vendor and payer. The vendor, payer and payment method must apply to all payments.`))return;
+    saving.current=true;setBusy(true);
     try{
-      const payload={...form,parts:parts.map(p=>({amounts:p.amounts,expense_date:p.expense_date,image_path:p.data.image_path,original_filename:p.file.name,ocr_raw:p.data}))};
-      const r=await fetch(`${API}/expenses/combined`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-      if(!r.ok){const d=await r.json().catch(()=>({}));setNotice(d.error||`Save failed (${r.status}).`);}
-      else{setParts([]);setForm({user_id:'',merchant:'',category_id:'',payment_method:'',expense_date:'',description:'',reimbursement_required:false});setNotice('Combined expense saved. Its payment screenshots are available in saved expenses and the Excel Combined screenshots sheet.');try{await onSaved();}catch{setNotice('Expense saved. Refresh the page to update the report.');}}
-    }catch(e){setLocked(true);setNotice('Save result is unknown due to a connection error. Check saved expenses before retrying; the expense may already be saved. Refresh only after checking.');}
-    setBusy(false);
+      await saveCombined({api:API,parts,form,humanReview:{purpose:form.description,final_fields:{...form,amount:(total/100).toFixed(2)},confirmed_at:new Date().toISOString(),ai_review:aiReview?.key===combinedReviewKey(form,parts,total)?aiReview:null},onPart:change,onProgress:setNotice});
+      setAiReview(null);setParts([]);setForm({user_id:'',merchant:'',category_id:'',payment_method:'',expense_date:'',description:'',reimbursement_required:false});
+      setNotice('Combined expense saved. Its payment screenshots are available in saved expenses and the Excel Combined screenshots sheet.');
+      try{await onSaved();}catch{setNotice('Expense saved. Refresh the page to update the report.');}
+    }catch(error){
+      if(error.outcomeUnknown)setLocked(true);
+      setNotice(error.message||'Unable to save. Review the screenshots and try again.');
+    }finally{saving.current=false;setBusy(false);}
   }
   return <section className="card tablecard no-print combined-card" aria-label="Combine vendor payments">
-    <h2>Combine payments for one vendor</h2><p>Upload one or more screenshots for the same vendor, payer and payment method. Add each payment amount shown and review the combined total.</p>
+    <h2>Combine payments for one vendor</h2><p>Upload one or more screenshots for the same vendor, payer and payment method. Add each payment amount shown and review the combined total. Saving automatically attaches any screenshots you have not uploaded yet.</p>
     <label className="batch-picker">Choose screenshots <input type="file" accept="image/*" multiple disabled={busy||locked} onChange={e=>{add(e.target.files);e.target.value='';}}/></label>
     <button disabled={busy||locked||!parts.some(p=>p.status==='waiting'||p.status==='error')} onClick={processParts}>Read screenshots</button>
     {notice&&<p className="message" role="status">{notice}</p>}
     {parts.map((p,i)=><div key={p.id} className="combined-item" style={{padding:16,margin:'14px 0',border:'1px solid #dce5dc',borderRadius:12}}>
-      <strong>{i+1}. {p.file.name}</strong> <span> · {p.status}</span><div className="combined-review" style={{display:'flex',gap:18,alignItems:'flex-start',flexWrap:'wrap',marginTop:10}}><ImagePreview file={p.file}/>
+      <strong>{i+1}. {p.file.name}</strong> <span> · {{waiting:'Not attached yet — attaches on save',reading:'Reading screenshot…',uploading:'Attaching screenshot…',ready:'Attached',error:'Needs attention'}[p.status]||p.status}</span><div className="combined-review" style={{display:'flex',gap:18,alignItems:'flex-start',flexWrap:'wrap',marginTop:10}}><ImagePreview file={p.file}/>
       <div className="combined-amounts" style={{flex:'1 1 350px'}}>
         <div className="fields"><label>Payment date<input type="date" value={p.expense_date} disabled={busy||locked} onChange={e=>change(p.id,{expense_date:e.target.value})}/></label></div>
         <p className="message">Payment amounts in this screenshot</p>
@@ -74,7 +81,7 @@ export default function CombinedExpenses({meta,onSaved}){
         <button type="button" disabled={busy||locked||p.amounts.length>=50} onClick={()=>change(p.id,{amounts:[...p.amounts,'']})}>+ Add another amount</button>
       </div></div>
       {p.data?.duplicate&&<p className="warn">Possible duplicate: this screenshot is attached to a saved expense.</p>}{p.error&&<p className="warn">{p.error}</p>}
-      {(p.status==='waiting'||p.status==='error')&&<button disabled={busy||locked} onClick={()=>manual(p)}>Attach and enter amounts manually</button>}
+      {(p.status==='waiting'||p.status==='error')&&<button disabled={busy||locked} onClick={()=>manual(p)}>Attach now (optional)</button>}
       <button disabled={busy||locked} onClick={()=>setParts(old=>old.filter(x=>x.id!==p.id))}>Remove</button>
     </div>)}
     {parts.length>0&&<><div className="fields combined-details">
@@ -83,8 +90,8 @@ export default function CombinedExpenses({meta,onSaved}){
       <label>Paid by<select value={form.user_id} disabled={busy||locked} onChange={e=>setForm({...form,user_id:e.target.value})}><option value="">Select</option>{meta.users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
       <label>Payment method<select value={form.payment_method} disabled={busy||locked} onChange={e=>setForm({...form,payment_method:e.target.value})}><option value="">Select</option><option value="wechat">WeChat</option><option value="alipay">Alipay</option><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other app</option></select></label>
       <label>Category<select value={form.category_id} disabled={busy||locked} onChange={e=>setForm({...form,category_id:e.target.value})}><option value="">Select</option>{meta.categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-      <label>Description<input value={form.description} disabled={busy||locked} onChange={e=>setForm({...form,description:e.target.value})}/></label>
+      <label>Purpose / description<input value={form.description} disabled={busy||locked} onChange={e=>setForm({...form,description:e.target.value})}/></label>
       <label className="check wide"><input type="checkbox" checked={form.reimbursement_required} disabled={busy||locked} onChange={e=>setForm({...form,reimbursement_required:e.target.checked})}/>Personal money — reimbursement required</label>
-    </div><p><strong>Combined total: {total===null?'Enter valid amounts':`¥${(total/100).toFixed(2)}`}</strong></p><button className="primary" disabled={busy||locked} onClick={save}>Save as one expense</button></>}
+    </div><CombinedExpenseReview api={API} form={form} parts={parts} total={total} categories={meta.categories} busy={busy||locked} review={aiReview} onReview={setAiReview} onCategory={id=>setForm(old=>({...old,category_id:id}))}/><p><strong>Combined total: {total===null?'Enter valid amounts':`¥${(total/100).toFixed(2)}`}</strong></p><button className="primary" disabled={busy||locked} onClick={save}>{busy?'Working…':'Save as one expense'}</button></>}
   </section>;
 }

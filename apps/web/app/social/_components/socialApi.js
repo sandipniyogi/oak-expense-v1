@@ -1,8 +1,6 @@
 export function socialApiBase() {
   if (process.env.NEXT_PUBLIC_SOCIAL_API_URL) return process.env.NEXT_PUBLIC_SOCIAL_API_URL.replace(/\/$/, '');
-  if (typeof window === 'undefined') return 'http://localhost:4500';
-  const port = window.location.port === '3000' ? '4501' : '4500';
-  return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  return '/module-api/social';
 }
 
 export async function socialFetch(path, options = {}) {

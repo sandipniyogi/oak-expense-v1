@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import styles from './inventory.module.css';
 
-function apiBase(){ return typeof window !== 'undefined' && window.location.port === '3100' ? 'http://localhost:4300' : 'http://localhost:4200'; }
+function apiBase(){ return '/module-api/inventory'; }
 function money(v){ return `¥${Number(v || 0).toFixed(2)}`; }
 function qty(p){ const d=p?.display_unit==='each'?0:2; return `${Number(p?.stock_display||0).toFixed(d)} ${p?.display_unit||''}`; }
 

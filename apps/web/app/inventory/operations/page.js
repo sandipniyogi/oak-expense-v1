@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import styles from '../inventory.module.css';
 
-function apiBase(){ return typeof window !== 'undefined' && window.location.port === '3100' ? 'http://localhost:4300' : 'http://localhost:4200'; }
+function apiBase(){ return '/module-api/inventory'; }
 function money(v){ return `¥${Math.abs(Number(v||0)).toFixed(2)}`; }
 function fmt(v,unit){ const d=unit==='each'?0:3; return `${Number(v||0).toFixed(d)} ${unit||''}`; }
 const actionLabels={use:'Use / Consume',waste:'Waste / Spoilage',breakage:'Breakage',staff_use:'Staff Use',return:'Return to Stock',correction_add:'Correction +',correction_remove:'Correction −'};

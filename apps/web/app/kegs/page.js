@@ -33,9 +33,7 @@ export default function KegInventoryPage() {
   );
 
   useEffect(() => {
-    const url = window.location.port === '3100'
-      ? 'http://localhost:4300'
-      : 'http://localhost:4200';
+    const url = '/module-api/keg';
     setApi(url);
     loadStations(url).catch(err => setMessage(err.message));
   }, []);
