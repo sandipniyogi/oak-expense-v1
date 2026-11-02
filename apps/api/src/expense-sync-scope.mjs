@@ -1,5 +1,15 @@
 // Explicit expense-only compatibility policy. No prefix wildcard or extra writes.
-export const expenseTables=['users','categories','merchants','expenses','oak_phone_saves'];
+export const legacyExpenseTables=['users','categories','merchants','expenses','oak_phone_saves'];
+export const companyFundTables=['oak_company_fund_entries','oak_company_expense_funding'];
+export const expenseTables=[...legacyExpenseTables,...companyFundTables];
+export const expenseKeys=Object.freeze(Object.fromEntries(expenseTables.map(t=>[t,t==='oak_company_expense_funding'?'expense_id':'id'])));
+export async function activeExpenseTables(c){
+ const found=(await c.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename=ANY($1)",[expenseTables])).rows.map(x=>x.tablename);
+ if(legacyExpenseTables.some(t=>!found.includes(t)))throw Error('Required expense tables missing');
+ const count=companyFundTables.filter(t=>found.includes(t)).length;
+ if(count!==0&&count!==2)throw Error('Incomplete company-funds migration');
+ return count===2?expenseTables:legacyExpenseTables;
+}
 export const separateModuleTables=[
  'oak_inv_suppliers','oak_inv_receipts','oak_inv_receipt_lines','oak_inv_ai_audit',
  'oak_inv_movements','oak_inv_stock_counts','oak_inv_transfers','oak_inv_audit',

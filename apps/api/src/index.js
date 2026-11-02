@@ -1,3 +1,4 @@
+import {companyFundsRoutes} from './company-funds.mjs';
 import {spendingReviewHandler} from './spending-review.mjs';
 import {pagination} from './expense-pagination.mjs';
 import express from 'express';
@@ -57,6 +58,7 @@ async function normalizeUploadedImage(file) {
 
 app.use(cors());
 app.use(express.json());
+if(process.env.OAK_COMPANY_FUNDS==='1')companyFundsRoutes(app,{pool});
 
 app.post('/expenses/review', expenseReviewHandler({pool}));
 

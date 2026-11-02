@@ -1,0 +1,5 @@
+services:
+  api:
+    environment:
+      OAK_COMPANY_FUNDS: "1"
+      OAK_STRICT_SYNC: "0"
