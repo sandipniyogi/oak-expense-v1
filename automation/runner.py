@@ -135,7 +135,9 @@ if __name__=='__main__':
     cfg=json.loads(pathlib.Path(args.config).read_text());state=pathlib.Path(cfg['state_dir']);state.mkdir(parents=True,exist_ok=True,mode=0o700)
     with (state/'runner.lock').open('w') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError:sys.exit(0)
+        except BlockingIOError:
+            print(json.dumps({'ok':False,'code':'AUTOMATION_BUSY','retryable':True,'error':'Another automation job holds the runner lock; no sync was run'}),file=sys.stderr)
+            sys.exit(75)
         try:
             mac=Machine(cfg);vps=Remote(cfg)
             if args.command=='conflicts':result=read(state/'conflicts.json',[])
