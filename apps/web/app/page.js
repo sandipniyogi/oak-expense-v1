@@ -1,6 +1,7 @@
 'use client';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import BatchExpenses from './BatchExpenses';
+import StrictSyncStatus from './StrictSyncStatus';
 import CombinedExpenses from './CombinedExpenses';
 import ExpenseReview from './ExpenseReview';
 import SpendingReview from './SpendingReview';
@@ -491,6 +492,7 @@ export default function Home() {
   }
 
   return <main className="expense-home">
+    <StrictSyncStatus />
     <header className="expense-header"><div><span className="eyebrow">THE OAK LOUNGE · SHANGHAI</span><h1>Expense management</h1><p>Capture payments, review transactions, and prepare reports in one place.</p></div><div className="badge">EXPENSES</div></header>
     <nav className="expense-nav no-print" aria-label="Expense page sections">
       <a href="#single-capture">Single expense</a><a href="#batch-capture">Batch upload</a><a href="#combine-payments">Combine payments</a><a href="#expense-report">Reports</a><a href="#saved-expenses">Saved expenses</a>

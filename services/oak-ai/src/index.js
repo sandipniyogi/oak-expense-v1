@@ -1,9 +1,11 @@
+import {gateMiddleware,strictEnabled} from './strict-sync-guard.mjs';
 import {reviewSpending} from './spending-review.mjs';
 import express from 'express';
 import cors from 'cors';
 import {reviewExpense} from './expense-review.mjs';
 
 const app = express();
+app.use(gateMiddleware());
 const PORT = Number(process.env.PORT || 4400);
 const OLLAMA_URL = String(process.env.OLLAMA_URL || 'http://host.docker.internal:11434').replace(/\/$/, '');
 const MODEL = process.env.OLLAMA_MODEL || 'qwen3:8b';

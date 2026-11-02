@@ -1,3 +1,4 @@
+import {gateMiddleware,strictEnabled} from './strict-sync-guard.mjs';
 import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
@@ -5,6 +6,7 @@ import bwipjs from 'bwip-js';
 
 const { Pool } = pg;
 const app = express();
+app.use(gateMiddleware());
 const port = Number(process.env.PORT || 4200);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const BUILD = 'oak-lounge-inventory-v4.1-operations';
@@ -1029,7 +1031,7 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: message, build: BUILD });
 });
 
-ensureSchema().then(() => {
+(strictEnabled()?Promise.resolve():ensureSchema()).then(() => {
   app.listen(port, '0.0.0.0', () => console.log(`Oak Inventory API ${BUILD} listening on ${port}`));
 }).catch(err => {
   console.error('Inventory schema initialization failed', err);

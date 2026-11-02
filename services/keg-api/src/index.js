@@ -1,9 +1,11 @@
+import {gateMiddleware,strictEnabled} from './strict-sync-guard.mjs';
 import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
 
 const { Pool } = pg;
 const app = express();
+app.use(gateMiddleware());
 const port = Number(process.env.PORT || 4200);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -275,7 +277,7 @@ app.post('/stations/:id/simulate', async (req, res) => {
   }
 });
 
-await ensureSchema();
+if(!strictEnabled())await ensureSchema();
 app.listen(port, '0.0.0.0', () => {
   console.log(`Oak keg API listening on ${port}`);
 });

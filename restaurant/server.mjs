@@ -1,3 +1,4 @@
+import {gateMiddleware,strictEnabled} from './scripts/strict-sync-guard.mjs';
 import http from 'node:http';
 import {createInstagramFeed} from './scripts/instagram-feed.mjs';
 import {DatabaseSync} from 'node:sqlite';
@@ -20,7 +21,10 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
  if(!/^[a-zA-Z0-9_]{1,60}$/.test(cookieName))throw Error('Invalid admin cookie name');
  if(!passwordHash)throw Error('ADMIN_PASSWORD_HASH is required. Run the setup script; never place a plaintext password in source.');
  fs.mkdirSync(path.join(dataDir,'uploads'),{recursive:true,mode:0o700});
+ const strict=strictEnabled();
+ const writeGate=gateMiddleware();
  const db=new DatabaseSync(path.join(dataDir,'restaurant.sqlite'));db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
+ if(!strict){
  db.exec(`CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS menu(id TEXT PRIMARY KEY,category TEXT NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',price_cents INTEGER,tags TEXT NOT NULL DEFAULT '[]',image TEXT NOT NULL DEFAULT '',published INTEGER NOT NULL DEFAULT 0,available INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',start_at TEXT,end_at TEXT,publish_at TEXT,image TEXT NOT NULL DEFAULT '',published INTEGER NOT NULL DEFAULT 0,pinned INTEGER NOT NULL DEFAULT 0,booking_url TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL);
@@ -49,7 +53,8 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
    db.exec('COMMIT');
   }catch(e){db.exec('ROLLBACK');db.close();throw e;}
  }
- const instagram=createInstagramFeed({db,token:instagramToken,userId:instagramUserId,fetcher:instagramFetch,clock});
+ } // Strict mode requires separately migrated/initialized staging storage.
+ const instagram=createInstagramFeed({db,initialize:!strict,token:instagramToken,userId:instagramUserId,fetcher:instagramFetch,clock});
  const failures=new Map();
  function audit(action,id=''){db.prepare('INSERT INTO audit(action,record_id,created_at) VALUES(?,?,?)').run(action,id,new Date(clock()).toISOString());}
  function settings(){return {...DEFAULTS,...JSON.parse(db.prepare('SELECT data FROM settings WHERE id=1').get().data)};}
@@ -59,6 +64,13 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
  function headers(res){res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob: https://*.cdninstagram.com https://*.fbcdn.net; style-src 'self'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");}
  async function handler(req,res){headers(res);let pathname;try{pathname=decodeURIComponent(new URL(req.url,'http://oak.local').pathname);}catch{return json(res,400,{error:'Invalid URL'});}
  try{
+  // Login/logout affect local sessions/audit only and remain available for browsing.
+  if(!['/api/admin/login','/api/admin/logout'].includes(pathname)){
+   req.path=pathname;
+   res.status=n=>{res.statusCode=n;return res};
+   res.json=value=>json(res,res.statusCode||200,value);
+   let proceed=false;await writeGate(req,res,()=>{proceed=true});if(!proceed)return;
+  }
   if(req.method==='GET'&&pathname==='/api/instagram')return json(res,200,instagram.publicFeed());
   if(req.method==='GET'&&pathname==='/api/health')return json(res,200,{ok:true});
   if(req.method==='GET'&&pathname==='/api/content')return json(res,200,content());
@@ -119,7 +131,7 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
   if(!fs.existsSync(file)||!fs.statSync(file).isFile())return json(res,404,{error:'Not found'});
   const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.jpg':'image/jpeg','.png':'image/png','.webp':'image/webp','.svg':'image/svg+xml','.pdf':'application/pdf','.json':'application/json; charset=utf-8'};res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':path.extname(file)==='.html'?'no-cache':'public, max-age=3600'});if(req.method==='HEAD')return res.end();fs.createReadStream(file).pipe(res);
  }catch(e){return json(res,e.status||400,{error:e instanceof SyntaxError?'Invalid request data':e.message});}}
- const server=http.createServer(handler);let instagramTimer;server.once('listening',()=>{void instagram.refresh();instagramTimer=setInterval(()=>{void instagram.refresh();},60000);instagramTimer.unref();});return {server,db,instagram,close:async()=>{clearInterval(instagramTimer);await instagram.close();return new Promise(resolve=>{server.close(()=>{db.close();resolve();});server.closeIdleConnections();});}};
+ const server=http.createServer(handler);let instagramTimer;server.once('listening',()=>{if(strict)return;void instagram.refresh();instagramTimer=setInterval(()=>{void instagram.refresh();},60000);instagramTimer.unref();});return {server,db,instagram,close:async()=>{clearInterval(instagramTimer);await instagram.close();return new Promise(resolve=>{server.close(()=>{db.close();resolve();});server.closeIdleConnections();});}};
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{const app=createApp({menuCatalog:true});app.server.listen(Number(process.env.PORT||3080),'0.0.0.0',()=>console.log('Oak restaurant listening on '+(process.env.PORT||3080)));}catch(e){console.error(e.message);process.exit(1);}

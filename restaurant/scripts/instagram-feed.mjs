@@ -2,9 +2,9 @@
 export const INSTAGRAM_PROFILE='https://www.instagram.com/theoaklounge786/';
 export function imageURL(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&(/(^|\.)cdninstagram\.com$/.test(u.hostname)||/(^|\.)fbcdn\.net$/.test(u.hostname))?u.href:'';}catch{return '';}}
 export function postURL(value){try{const u=new URL(value);return u.protocol==='https:'&&['www.instagram.com','instagram.com'].includes(u.hostname)&&/^\/(p|reel|tv)\/[A-Za-z0-9_-]+\/?$/.test(u.pathname)?'https://www.instagram.com'+u.pathname:'';}catch{return '';}}
-export function createInstagramFeed({db,token='',userId='',apiVersion='v25.0',fetcher=fetch,clock=()=>Date.now()}){
+export function createInstagramFeed({db,initialize=true,token='',userId='',apiVersion='v25.0',fetcher=fetch,clock=()=>Date.now()}){
  const configured=Boolean(token&&/^\d+$/.test(userId)&&/^v\d+\.0$/.test(apiVersion));let pending=null,closed=false,lastAttempt=0,error='',controller;
- db.exec('CREATE TABLE IF NOT EXISTS instagram_cache(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL,updated_at INTEGER NOT NULL)');
+ if(initialize)db.exec('CREATE TABLE IF NOT EXISTS instagram_cache(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL,updated_at INTEGER NOT NULL)');
  function cached(){const r=db.prepare('SELECT * FROM instagram_cache WHERE id=1').get();return r?{posts:JSON.parse(r.data),updated_at:r.updated_at}:{posts:[],updated_at:null};}
  function publicFeed(){const c=cached(),stale=c.updated_at==null||clock()-c.updated_at>24*3600000;return {profile_url:INSTAGRAM_PROFILE,username:'theoaklounge786',posts:stale?[]:c.posts,updated_at:c.updated_at,stale};}
  function status(){const c=cached();return {configured,username:'theoaklounge786',post_count:c.posts.length,last_sync:c.updated_at,last_attempt:lastAttempt||null,error,refresh_minutes:15};}
