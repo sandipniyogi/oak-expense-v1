@@ -1,0 +1,11 @@
+# Restaurant transaction and upload integration rehearsal
+
+Six Node tests use the existing coordinator and HTTP guard with two disposable SQLite databases. The injected SQLite controller is a test adapter, not a deployed live control service. Content tables and upload receipt tables use test_ names; the actual restaurant handlers remain unchanged and strict restaurant writes remain blocked.
+
+The new permit store accepts only a peer-bound application claim, uses synchronous BEGIN IMMEDIATE transactions through the tested SQLite barrier, and saves a durable upload intent before publishing an immutable hash-named image. SQL upload receipts commit only after the file has been fsynced. A remaining intent blocks subsequent adapter mutations until trusted recovery occurs with the database frozen. Recovery preserves committed files, quarantines newly created uncommitted files and refuses missing/corrupt committed media. It does not unlock the coordinator.
+
+Tests cover HTTP/coordinator upload authorization, offline fixture rejection, relocking, content rollback, wrong peer/stale claims, actual child-process exits at three checkpoints, repeat recovery and missing committed media. Temporary databases and files are removed afterward. Process exit tests do not simulate hardware power loss or all filesystem failure modes.
+
+Boundaries: this is not integrated into server.mjs, public upload serving, local sessions/audit/cache, production table migrations, real Git verification, all-module replication, role/file ownership or distributed recovery. No live deploy is authorized by passing this test. SQLite file owners can bypass triggers; production needs a single trusted writer and restricted filesystem access. An accepted operation may finish after a peer disconnects; this test does not implement instantaneous network-loss cancellation. Claims are trusted internal objects, not browser credentials. Keep PR #9 draft and automatic deployment paused.
+
+The test runner uses the already running restaurant staging container, copies only source to a random /tmp directory, runs node --test, and removes that directory as container root because docker cp creates root-owned directories. The tests themselves run as the container application user. No rebuild or service restart occurs.
