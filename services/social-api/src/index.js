@@ -1,3 +1,5 @@
+import {fencedPool} from './fenced-pool.mjs';
+import {gateMiddleware,strictEnabled} from './strict-sync-guard.mjs';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -28,8 +30,9 @@ const DIRS = {
 };
 for (const dir of Object.values(DIRS)) fs.mkdirSync(dir, { recursive: true });
 
-const pool = new Pool({ connectionString: DATABASE_URL });
+const pool = fencedPool(new Pool({ connectionString: DATABASE_URL }),{enabled:strictEnabled()});
 const app = express();
+app.use(gateMiddleware());
 app.use(cors());
 app.use(express.json({ limit: '8mb' }));
 app.use('/files/assets', express.static(DIRS.assets));
@@ -965,6 +968,7 @@ function zonedParts(date, timeZone) {
 }
 
 async function agentTick() {
+  if(strictEnabled())return; // No background business writes outside the coordinator.
   try {
     await pool.query(`UPDATE oak_social_projects SET status='ready_to_publish',updated_at=now() WHERE status='scheduled' AND scheduled_for <= now()`);
     const settings = (await pool.query('SELECT * FROM oak_social_agent_settings WHERE id=1')).rows[0];
@@ -987,9 +991,10 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || 'Unexpected server error' });
 });
 
-await initDb();
+if(!strictEnabled())await initDb();
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Oak Social API listening on ${PORT} (${BUILD})`);
+  if(strictEnabled())return;
   setTimeout(agentTick, 5000);
   setInterval(agentTick, Math.max(60000, AGENT_TICK_MS));
 });

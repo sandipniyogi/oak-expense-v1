@@ -19,6 +19,7 @@ async function snapshot(c){
  return {schema,rows,digest:sha(stable({schema,rows}))};
 }
 async function main(q){
+ if(process.env.OAK_STRICT_SYNC==='1'&&['init','apply','file_put'].includes(q.op))throw Error('Strict sync staging lock: bridge mutations are disabled until a fenced live sync adapter is installed.');
  if(q.op==='digest')return {digest:sha(stable({schema:q.schema,rows:q.rows}))};
  if(q.op==='init'){await pool.query(fs.readFileSync(new URL('./automation-schema.sql',import.meta.url),'utf8'));return {ok:true};}
  if(q.op==='file_get'){const p=safe(q.name);if(!fs.lstatSync(p).isFile()||fs.lstatSync(p).isSymbolicLink())throw Error('Not a regular attachment');const b=fs.readFileSync(p);if(b.length>32*1024*1024)throw Error('Attachment too large');return {sha256:sha(b),data:b.toString('base64')};}

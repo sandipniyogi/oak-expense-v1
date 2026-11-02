@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """One compose configuration for all Mac staging application services."""
-import json,pathlib,subprocess,os,time,urllib.request
+import json,pathlib,subprocess,os,time,urllib.request,sys
 root=pathlib.Path(__file__).resolve().parents[1]
 env={**os.environ,'INVENTORY_API_HOST_PORT':'4300','KEG_API_HOST_PORT':'4301','AI_API_HOST_PORT':'4400','SOCIAL_API_HOST_PORT':'4500','SOCIAL_STORAGE_DIR':str(root/'storage-staging/social')}
 files=['docker-compose.yml','automation/compose.local.yaml','docker-compose.inventory.yml','docker-compose.keg.yml','docker-compose.social.yml','docker-compose.ai.yml','automation/compose.ai-staging.yaml','docker-compose.phone-queue.yml']
+if '--strict-lock' in sys.argv:files.append('automation/compose.strict-staging.yaml')
 cmd=['docker','compose','-p','oak-expense-staging','--env-file','.env.staging']
 for file in files:cmd+=['-f',file]
 resolved=subprocess.run(cmd+['config','--format','json'],cwd=root,env=env,text=True,capture_output=True)

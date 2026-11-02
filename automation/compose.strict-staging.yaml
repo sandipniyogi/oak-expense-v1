@@ -1,0 +1,18 @@
+# Opt-in ONLY through start-all-staging.py --strict-lock.
+# No coordinator is configured, so mutations fail closed. No live overlay exists.
+services:
+  api:
+    environment:
+      OAK_STRICT_SYNC: "1"
+  inventory-api:
+    environment:
+      OAK_STRICT_SYNC: "1"
+  keg-api:
+    environment:
+      OAK_STRICT_SYNC: "1"
+  social-api:
+    environment:
+      OAK_STRICT_SYNC: "1"
+  oak-ai:
+    environment:
+      OAK_STRICT_SYNC: "1"
