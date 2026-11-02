@@ -1,3 +1,4 @@
+import {operationContext} from './scripts/transaction-context.mjs';
 import {gateMiddleware,strictEnabled} from './scripts/strict-sync-guard.mjs';
 import http from 'node:http';
 import {createInstagramFeed} from './scripts/instagram-feed.mjs';
@@ -17,12 +18,13 @@ function url(v){if(!v)return '';const u=new URL(v);if(u.protocol!=='https:')thro
 function date(v){if(!v)return null;const n=Date.parse(v);if(!Number.isFinite(n))throw Error('Invalid date');return new Date(n).toISOString();}
 const DEFAULTS={name:'The Oak Lounge',city:'Shanghai',eyebrow:'FOOD · MUSIC · CULTURE · TOGETHER',hero_title:'Bengali soul.\nShanghai nights.',hero_text:'Come for the flavours. Stay for the conversation. Bengali cuisine, cocktails and shisha, brought together at The Oak Lounge.',about_title:'Rooted in Bengal.\nMade for together.',about_text:'Some evenings deserve a little more time. A table to share, a drink to savour, and a familiar place to come back to. Welcome to The Oak Lounge, Shanghai.',address:'',hours:'',phone:'',wechat:'',booking_url:'',instagram_url:'https://www.instagram.com/theoaklounge786/',announcement:'',announcement_link:'',logo_url:'/assets/oak-logo.jpg',hero_image:'/assets/oak-hero.png',wechat_qr:''};
 async function body(req,max=65536){const chunks=[];let size=0;for await(const b of req){size+=b.length;if(size>max)throw Object.assign(Error('Request too large'),{status:413});chunks.push(b);}return Buffer.concat(chunks);}
-export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),passwordHash=process.env.ADMIN_PASSWORD_HASH,secure=process.env.NODE_ENV==='production',origin=process.env.PUBLIC_ORIGIN||'',clock=()=>Date.now(),rateLimit=10,cookieName=process.env.ADMIN_COOKIE_NAME||'oak_admin',instagramToken=process.env.INSTAGRAM_ACCESS_TOKEN||'',instagramUserId=process.env.INSTAGRAM_USER_ID||'',instagramFetch=fetch,menuCatalog=false,environment=process.env.APP_ENV||'production'}={}){
+export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),passwordHash=process.env.ADMIN_PASSWORD_HASH,secure=process.env.NODE_ENV==='production',origin=process.env.PUBLIC_ORIGIN||'',clock=()=>Date.now(),rateLimit=10,cookieName=process.env.ADMIN_COOKIE_NAME||'oak_admin',instagramToken=process.env.INSTAGRAM_ACCESS_TOKEN||'',instagramUserId=process.env.INSTAGRAM_USER_ID||'',instagramFetch=fetch,menuCatalog=false,environment=process.env.APP_ENV||'production',permitAdapterFactory=null}={}){
  if(!/^[a-zA-Z0-9_]{1,60}$/.test(cookieName))throw Error('Invalid admin cookie name');
  if(!passwordHash)throw Error('ADMIN_PASSWORD_HASH is required. Run the setup script; never place a plaintext password in source.');
  fs.mkdirSync(path.join(dataDir,'uploads'),{recursive:true,mode:0o700});
  const strict=strictEnabled();
- const writeGate=gateMiddleware({allowDatabaseWrites:false});
+ if(permitAdapterFactory&&(!strict||environment!=='strict-rehearsal'||process.env.OAK_STRICT_REHEARSAL!=='1'))throw Error('Permit adapter injection is restricted to strict rehearsal');
+ const writeGate=gateMiddleware({allowDatabaseWrites:Boolean(permitAdapterFactory)});
  const db=new DatabaseSync(path.join(dataDir,'restaurant.sqlite'));db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
  if(!strict){
  db.exec(`CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
@@ -54,6 +56,8 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
   }catch(e){db.exec('ROLLBACK');db.close();throw e;}
  }
  } // Strict mode requires separately migrated/initialized staging storage.
+ const permitAdapter=permitAdapterFactory?.({db,dataDir});
+ if(permitAdapter&&(!permitAdapter.mutate||!permitAdapter.upload))throw Error('Invalid permit adapter');
  const instagram=createInstagramFeed({db,initialize:!strict,token:instagramToken,userId:instagramUserId,fetcher:instagramFetch,clock});
  const failures=new Map();
  function audit(action,id=''){db.prepare('INSERT INTO audit(action,record_id,created_at) VALUES(?,?,?)').run(action,id,new Date(clock()).toISOString());}
@@ -63,13 +67,15 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
  function sourceOK(req){if(!req.headers.origin)return false;try{const o=new URL(req.headers.origin);if(origin)return o.origin===new URL(origin).origin;return o.host===req.headers.host;}catch{return false;}}
  function headers(res){res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob: https://*.cdninstagram.com https://*.fbcdn.net; style-src 'self'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");}
  async function handler(req,res){headers(res);let pathname;try{pathname=decodeURIComponent(new URL(req.url,'http://oak.local').pathname);}catch{return json(res,400,{error:'Invalid URL'});}
+ let requestClaim;
+ const mutate=fn=>strict?permitAdapter.mutate(requestClaim,fn):fn(db);
  try{
   // Login/logout affect local sessions/audit only and remain available for browsing.
   if(!['/api/admin/login','/api/admin/logout'].includes(pathname)){
    req.path=pathname;
    res.status=n=>{res.statusCode=n;return res};
    res.json=value=>json(res,res.statusCode||200,value);
-   let proceed=false;await writeGate(req,res,()=>{proceed=true});if(!proceed)return;
+   let proceed=false;await writeGate(req,res,()=>{requestClaim=operationContext.getStore();proceed=true});if(!proceed)return;
   }
   if(req.method==='GET'&&pathname==='/api/instagram')return json(res,200,instagram.publicFeed());
   if(req.method==='GET'&&pathname==='/api/health')return json(res,200,{ok:true});
@@ -88,7 +94,7 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
    if(req.method==='GET'&&pathname==='/api/admin/session')return json(res,200,{username:'admin',csrf:session.csrf});
    if(req.method==='GET'&&pathname==='/api/admin/content')return json(res,200,{...content(true),instagram:instagram.status(),audit:db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 30').all()});
    if(!sourceOK(req)||req.headers['x-csrf-token']!==session.csrf)return json(res,403,{error:'Invalid request verification token'});
-   if(req.method==='POST'&&pathname==='/api/admin/instagram/refresh'){const result=await instagram.refresh(true);return json(res,200,result);}
+   if(req.method==='POST'&&pathname==='/api/admin/instagram/refresh'){if(strict)return json(res,423,{error:'Instagram refresh has no fenced adapter'});const result=await instagram.refresh(true);return json(res,200,result);}
    if(req.method==='POST'&&pathname==='/api/admin/logout'){db.prepare('DELETE FROM sessions WHERE id=?').run(session.id);return json(res,200,{ok:true},{'Set-Cookie':`${cookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure?'; Secure':''}`});}
    if(req.method==='POST'&&pathname==='/api/admin/upload'){
     const bytes=await body(req,8*1024*1024);let ext;
@@ -96,18 +102,18 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
     else if(bytes[0]===255&&bytes[1]===216&&bytes[2]===255)ext='jpg';
     else if(bytes.subarray(0,4).toString()==='RIFF'&&bytes.subarray(8,12).toString()==='WEBP')ext='webp';
     else return json(res,400,{error:'Upload a JPG, PNG or WebP image (maximum 8 MB). SVG and documents are not accepted.'});
-    const name=digest(bytes)+'.'+ext;fs.writeFileSync(path.join(dataDir,'uploads',name),bytes,{mode:0o600});audit('image.upload',name);return json(res,201,{url:'/media/'+name});
+    let name;if(strict){({name}=permitAdapter.upload(requestClaim,bytes,saved=>audit('image.upload',saved.name)));}else{name=digest(bytes)+'.'+ext;fs.writeFileSync(path.join(dataDir,'uploads',name),bytes,{mode:0o600});audit('image.upload',name);}return json(res,201,{url:'/media/'+name});
    }
    const q=JSON.parse((await body(req)).toString()||'{}');
    if(req.method==='PUT'&&pathname==='/api/admin/settings'){
     const next={...settings()};for(const key of Object.keys(DEFAULTS))if(Object.hasOwn(q,key))next[key]=text(q[key],key.endsWith('text')?6000:1000);
     for(const key of ['logo_url','hero_image','wechat_qr'])next[key]=asset(next[key]);for(const key of ['booking_url','instagram_url','announcement_link'])next[key]=url(next[key]);
     if(next.phone&&!/^[+\d\s()\-]{5,35}$/.test(next.phone))throw Error('Invalid phone number');
-    db.prepare('UPDATE settings SET data=? WHERE id=1').run(JSON.stringify(next));audit('settings.update');return json(res,200,{ok:true});
+    mutate(()=>{db.prepare('UPDATE settings SET data=? WHERE id=1').run(JSON.stringify(next));audit('settings.update');});return json(res,200,{ok:true});
    }
    const match=pathname.match(/^\/api\/admin\/(menu|events)(?:\/([a-f0-9-]{36}))?$/);if(!match)return json(res,404,{error:'Not found'});
    const [,table,id]=match;
-   if(req.method==='DELETE'&&id){const result=db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id);if(!result.changes)return json(res,404,{error:'Not found'});audit(table+'.delete',id);return json(res,200,{ok:true});}
+   if(req.method==='DELETE'&&id){const result=mutate(()=>{const saved=db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id);if(saved.changes)audit(table+'.delete',id);return saved;});if(!result.changes)return json(res,404,{error:'Not found'});return json(res,200,{ok:true});}
    if(!['POST','PUT'].includes(req.method)||((req.method==='PUT')!==Boolean(id)))return json(res,405,{error:'Method not allowed'});
    if(id&&!db.prepare(`SELECT id FROM ${table} WHERE id=?`).get(id))return json(res,404,{error:'Not found'});
    const rid=id||crypto.randomUUID(),updated=new Date(clock()).toISOString();
@@ -117,12 +123,12 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
     const price=q.price===''||q.price==null?null:Number(q.price);if(price!=null&&(!Number.isFinite(price)||price<0||price>100000||Math.abs(price*100-Math.round(price*100))>0.000001))throw Error('Enter a valid price with up to two decimal places');
     if(q.published&&price==null)throw Error('Add the real price before publishing a menu item');
     const tags=Array.isArray(q.tags)?q.tags.slice(0,6).map(x=>text(x,40)):[];const order=Number(q.sort_order||0);if(!Number.isInteger(order)||Math.abs(order)>10000)throw Error('Invalid sort order');
-    db.prepare(`INSERT INTO menu VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET category=excluded.category,name=excluded.name,description=excluded.description,price_cents=excluded.price_cents,tags=excluded.tags,image=excluded.image,published=excluded.published,available=excluded.available,sort_order=excluded.sort_order,updated_at=excluded.updated_at`).run(rid,q.category,name,text(q.description||'',2000),price==null?null:Math.round(price*100),JSON.stringify(tags),asset(q.image),q.published?1:0,q.available===false?0:1,order,updated);
+    mutate(()=>{db.prepare(`INSERT INTO menu VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET category=excluded.category,name=excluded.name,description=excluded.description,price_cents=excluded.price_cents,tags=excluded.tags,image=excluded.image,published=excluded.published,available=excluded.available,sort_order=excluded.sort_order,updated_at=excluded.updated_at`).run(rid,q.category,name,text(q.description||'',2000),price==null?null:Math.round(price*100),JSON.stringify(tags),asset(q.image),q.published?1:0,q.available===false?0:1,order,updated);audit(table+(q.published?'.publish':'.save'),rid);});
    }else{
     const title=text(q.title,160);if(!title)throw Error('Event title is required');const start=date(q.start_at),end=date(q.end_at),pub=date(q.publish_at);if(end&&(!start||end<start))throw Error('Event end must follow its start');if(q.published&&!start)throw Error('Set an event date before publishing');
-    db.prepare(`INSERT INTO events VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,start_at=excluded.start_at,end_at=excluded.end_at,publish_at=excluded.publish_at,image=excluded.image,published=excluded.published,pinned=excluded.pinned,booking_url=excluded.booking_url,updated_at=excluded.updated_at`).run(rid,title,text(q.description||'',5000),start,end,pub,asset(q.image),q.published?1:0,q.pinned?1:0,url(q.booking_url),updated);
+    mutate(()=>{db.prepare(`INSERT INTO events VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,start_at=excluded.start_at,end_at=excluded.end_at,publish_at=excluded.publish_at,image=excluded.image,published=excluded.published,pinned=excluded.pinned,booking_url=excluded.booking_url,updated_at=excluded.updated_at`).run(rid,title,text(q.description||'',5000),start,end,pub,asset(q.image),q.published?1:0,q.pinned?1:0,url(q.booking_url),updated);audit(table+(q.published?'.publish':'.save'),rid);});
    }
-   audit(table+(q.published?'.publish':'.save'),rid);return json(res,id?200:201,{ok:true,id:rid});
+   return json(res,id?200:201,{ok:true,id:rid});
   }
   if(req.method!=='GET'&&req.method!=='HEAD')return json(res,405,{error:'Method not allowed'});
   let file;

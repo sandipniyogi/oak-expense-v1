@@ -10,11 +10,11 @@ test('strict restaurant permits browsing/login, blocks direct content writes and
  let app;
  try{
   delete process.env.OAK_STRICT_SYNC;
-  app=createApp({dataDir:dir,passwordHash:hashPassword('staging-test-password'),secure:false});
+  app=createApp({origin:'',dataDir:dir,passwordHash:hashPassword('staging-test-password'),secure:false});
   const before=app.db.prepare('SELECT * FROM menu ORDER BY id').all();
   await app.close();app=null;
   process.env.OAK_STRICT_SYNC='1';
-  app=createApp({dataDir:dir,passwordHash:hashPassword('staging-test-password'),secure:false,menuCatalog:true});
+  app=createApp({origin:'',dataDir:dir,passwordHash:hashPassword('staging-test-password'),secure:false,menuCatalog:true});
   app.server.listen(0,'127.0.0.1');await once(app.server,'listening');const url='http://127.0.0.1:'+app.server.address().port;
   assert.deepEqual(app.db.prepare('SELECT * FROM menu ORDER BY id').all(),before);
   assert.equal((await fetch(url+'/api/content')).status,200);
