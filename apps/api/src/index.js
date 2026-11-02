@@ -1,3 +1,4 @@
+import {fencedPool} from './fenced-pool.mjs';
 import {gateMiddleware,strictEnabled} from './strict-sync-guard.mjs';
 import {spendingReviewHandler} from './spending-review.mjs';
 import {pagination} from './expense-pagination.mjs';
@@ -18,7 +19,7 @@ app.use(gateMiddleware());
 const port = process.env.PORT || 4000;
 const uploadDir = process.env.UPLOAD_DIR || '/app/uploads';
 const ocrUrl = process.env.OCR_URL || 'http://localhost:8001';
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = fencedPool(new Pool({ connectionString: process.env.DATABASE_URL }),{enabled:strictEnabled()});
 if(process.env.OAK_SYNC_ENABLED==='1'&&!strictEnabled())await pool.query(fs.readFileSync(new URL('./automation-schema.sql',import.meta.url),'utf8'));
 
 fs.mkdirSync(uploadDir, { recursive: true });

@@ -1,3 +1,4 @@
+import {fencedPool} from './fenced-pool.mjs';
 import {gateMiddleware,strictEnabled} from './strict-sync-guard.mjs';
 import express from 'express';
 import cors from 'cors';
@@ -29,7 +30,7 @@ const DIRS = {
 };
 for (const dir of Object.values(DIRS)) fs.mkdirSync(dir, { recursive: true });
 
-const pool = new Pool({ connectionString: DATABASE_URL });
+const pool = fencedPool(new Pool({ connectionString: DATABASE_URL }),{enabled:strictEnabled()});
 const app = express();
 app.use(gateMiddleware());
 app.use(cors());

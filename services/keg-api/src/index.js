@@ -1,3 +1,4 @@
+import {fencedPool} from './fenced-pool.mjs';
 import {gateMiddleware,strictEnabled} from './strict-sync-guard.mjs';
 import express from 'express';
 import cors from 'cors';
@@ -7,7 +8,7 @@ const { Pool } = pg;
 const app = express();
 app.use(gateMiddleware());
 const port = Number(process.env.PORT || 4200);
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = fencedPool(new Pool({ connectionString: process.env.DATABASE_URL }),{enabled:strictEnabled()});
 
 app.use(cors());
 app.use(express.json({ limit: '256kb' }));

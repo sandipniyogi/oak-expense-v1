@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {FencedCoordinator} from '../src/fenced-coordinator.mjs';
+function fixture(t){const folder=fs.mkdtempSync(path.join(os.tmpdir(),'oak-paired-unit-'));t.after(()=>fs.rmSync(folder,{recursive:true,force:true}));const events=[];const databases={async freeze(){events.push('freeze')},async begin(id,mode){events.push(mode);return {mac:{id,mode,peer:'mac',generation:'8'},vps:{id,mode,peer:'vps',generation:'12'}}}};const provider={rehearsal:true,async sync(){events.push('replicate')},async inspect(nonce){events.push('inspect');return {nonce,complete:true,approved:'a'.repeat(40),mac:{online:true,commit:'a'.repeat(40),digest:'same'},vps:{online:true,commit:'a'.repeat(40),digest:'same'}}}};const coordinator=new FencedCoordinator({stateFile:path.join(folder,'state.json'),provider,databases});return {coordinator,events,databases,provider}}
+test('sync freezes around replication and verifies while frozen',async t=>{const {coordinator:c,events}=fixture(t);await c.sync();assert.deepEqual(events,['freeze','synchronization','replicate','freeze','inspect']);assert.equal(c.state.dirty,false)});
+test('write permit selects the epoch belonging to the requesting peer',async t=>{const {coordinator:c}=fixture(t);await c.sync();assert.equal((await c.acquire('vps')).database_claim.generation,'12')});
+test('partial paired grant never returns a usable permit or forgets its intent',async t=>{const {coordinator:c,databases}=fixture(t);await c.sync();databases.begin=async()=>{throw Error('peer lost')};await assert.rejects(c.acquire('mac'));assert.ok(c.state.active);assert.equal(c.state.dirty,true);await assert.rejects(c.sync(),/uncertain/)});
+test('completion must freeze both DBs before clearing active state',async t=>{const {coordinator:c,databases}=fixture(t);await c.sync();const permit=await c.acquire('mac');databases.freeze=async()=>{throw Error('offline')};await assert.rejects(c.complete('mac',permit.id));assert.ok(c.state.active);assert.equal(c.state.dirty,true)});
+test('failed synchronization keeps the gate dirty and withdraws permits',async t=>{const {coordinator:c,provider,events}=fixture(t);provider.sync=async()=>{throw Error('conflict')};await assert.rejects(c.sync());assert.equal(c.state.dirty,true);assert.equal(events.at(-1),'freeze')});
+test('uncertain response is retained even after successful freezing',async t=>{const {coordinator:c}=fixture(t);await c.sync();const permit=await c.acquire('mac');await c.complete('mac',permit.id,true);assert.ok(c.state.active);await assert.rejects(c.sync(),/uncertain/)});

@@ -22,7 +22,7 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(HERE,'data'),
  if(!passwordHash)throw Error('ADMIN_PASSWORD_HASH is required. Run the setup script; never place a plaintext password in source.');
  fs.mkdirSync(path.join(dataDir,'uploads'),{recursive:true,mode:0o700});
  const strict=strictEnabled();
- const writeGate=gateMiddleware();
+ const writeGate=gateMiddleware({allowDatabaseWrites:false});
  const db=new DatabaseSync(path.join(dataDir,'restaurant.sqlite'));db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
  if(!strict){
  db.exec(`CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
