@@ -1,14 +1,16 @@
-// Explicit expense-only compatibility policy. No prefix wildcard or extra writes.
+// Explicit legacy/extended scopes. No prefix wildcard or extra writes.
 export const legacyExpenseTables=['users','categories','merchants','expenses','oak_phone_saves'];
 export const companyFundTables=['oak_company_fund_entries','oak_company_expense_funding'];
-export const expenseTables=[...legacyExpenseTables,...companyFundTables];
-export const expenseKeys=Object.freeze(Object.fromEntries(expenseTables.map(t=>[t,t==='oak_company_expense_funding'?'expense_id':'id'])));
+// Keep the historical public export stable for legacy callers.
+export const expenseTables=legacyExpenseTables;
+export const extendedExpenseTables=[...legacyExpenseTables,...companyFundTables];
+export const expenseKeys=Object.freeze(Object.fromEntries(extendedExpenseTables.map(t=>[t,t==='oak_company_expense_funding'?'expense_id':'id'])));
 export async function activeExpenseTables(c){
- const found=(await c.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename=ANY($1)",[expenseTables])).rows.map(x=>x.tablename);
+ const found=(await c.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename=ANY($1)",[extendedExpenseTables])).rows.map(x=>x.tablename);
  if(legacyExpenseTables.some(t=>!found.includes(t)))throw Error('Required expense tables missing');
  const count=companyFundTables.filter(t=>found.includes(t)).length;
  if(count!==0&&count!==2)throw Error('Incomplete company-funds migration');
- return count===2?expenseTables:legacyExpenseTables;
+ return count===2?extendedExpenseTables:legacyExpenseTables;
 }
 export const separateModuleTables=[
  'oak_inv_suppliers','oak_inv_receipts','oak_inv_receipt_lines','oak_inv_ai_audit',
@@ -21,7 +23,7 @@ export const separateModuleTables=[
  'inventory_shisha_bowls','inventory_shisha_bowl_items','inventory_products','inventory_stations','inventory_readings','inventory_recipes','inventory_recipe_items','inventory_sales','inventory_stock_movements','inventory_product_packs','inventory_purchase_receipts','inventory_purchase_lines'
 ];
 export async function assertExpenseSyncScope(c){
- const allowed=[...expenseTables,'oak_sync_tombstones',...separateModuleTables];
+ const allowed=[...extendedExpenseTables,'oak_sync_tombstones',...separateModuleTables];
  const extra=(await c.query("select tablename from pg_tables where schemaname='public' and tablename <> ALL($1)",[allowed])).rows;
  if(extra.length)throw Error('Untracked database tables; sync requires an explicit migration: '+extra.map(x=>x.tablename).join(','));
  // Outside rows must not be cascaded, orphaned or used as parents by expense sync.
@@ -32,6 +34,6 @@ export async function assertExpenseSyncScope(c){
   where fk.contype='f' and (
    (sn.nspname='public' and src.relname=ANY($1) and not (dn.nspname='public' and dst.relname=ANY($1)))
    or (dn.nspname='public' and dst.relname=ANY($1) and not (sn.nspname='public' and src.relname=ANY($1)))
-  )`,[expenseTables])).rows;
+  )`,[extendedExpenseTables])).rows;
  if(cross.length)throw Error('Expense sync crosses an excluded table boundary; explicit migration required: '+cross.map(x=>x.source_table+' -> '+x.target_table).join(','));
 }
