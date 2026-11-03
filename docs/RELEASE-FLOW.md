@@ -1,3 +1,5 @@
+> **Historical/special-purpose reference.** The [current operations handbook](handbook/README.md) takes precedence for the configured live stacks. Company funds is now deployed; the separate approved-code job replaces the old automatic deployment path. Follow its deployment and recovery chapters before using older live commands.
+
 # Approved release workflow
 
 Target: Mac staging → GitHub staging branch → reviewed merge to main → Mac live health check → VPS.

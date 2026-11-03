@@ -1,3 +1,5 @@
+> **Historical/special-purpose reference.** The [current operations handbook](../handbook/README.md) takes precedence for the configured live stacks. Company funds is now deployed; the separate approved-code job replaces the old automatic deployment path. Follow its deployment and recovery chapters before using older live commands.
+
 # Setup process and environment map
 
 Recorded 29 October 2026, Asia/Shanghai. Based on repository source and the owner's setup outputs. This is the Git-safe setup record: no real passwords, tokens or private keys.

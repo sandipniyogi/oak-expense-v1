@@ -1,3 +1,5 @@
+> **Historical/special-purpose reference.** The [current operations handbook](../docs/handbook/README.md) takes precedence for the configured live stacks. Company funds is now deployed; the separate approved-code job replaces the old automatic deployment path. Follow its deployment and recovery chapters before using older live commands.
+
 # Restaurant website: Mac staging → Mac live → VPS
 
 The restaurant code lives at oak-expense-v1/restaurant, in the same parent
