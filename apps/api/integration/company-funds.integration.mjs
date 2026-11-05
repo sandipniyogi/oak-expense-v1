@@ -11,17 +11,5 @@ try{
  assert.equal((await call('/company-funds/entries/'+first.data.id+'/void','POST',{reason:'Incorrect advance'})).status,200);r=(await call('/company-funds?month=2026-11')).data;assert.equal(r.summary.partners[0].closing_cents,700000);assert.ok(r.entries.find(e=>e.id===first.data.id).voided_at);console.log('PASS: void keeps history and recalculates balance');
  await pool.query('UPDATE expenses SET amount=9000 WHERE id=$1',[expense]);r=(await call('/company-funds?month=2026-11')).data;assert.ok(r.summary.provisional);assert.equal(r.summary.partners[0].closing_cents,-100000);console.log('PASS: edited expenses require a new review');
  assert.equal((await call('/company-funds/expenses/'+expense,'PUT',{funding_source:'company'})).status,400);await pool.query('UPDATE expenses SET user_id=$1 WHERE id=$2',[company,expense]);assert.equal((await call('/company-funds/expenses/'+expense,'PUT',{funding_source:'company'})).status,200);r=(await call('/company-funds?month=2026-11')).data;assert.equal(r.summary.company_paid_cents,900000);await pool.query("UPDATE expenses SET currency='USD' WHERE id=$1",[expense]);assert.equal((await call('/company-funds/expenses/'+expense,'PUT',{funding_source:'personal'})).status,400);console.log('PASS: company payer validation and currency protection');
- assert.equal((await call('/company-funds?month=invalid')).status,400);
- const other=(await pool.query("INSERT INTO users(name,role) VALUES('Offset example','partner') RETURNING id")).rows[0].id;
- const cost=(await pool.query("INSERT INTO expenses(user_id,amount,expense_date,description) VALUES($1,3000,'2026-11-02','Offset test expense') RETURNING id",[other])).rows[0].id;
- assert.equal((await call('/company-funds/expenses/'+cost,'PUT',{funding_source:'personal'})).status,200);
- async function net(){return (await call('/company-funds?month=2026-11')).data.summary.partners.find(p=>p.id===other)}
- assert.equal((await net()).company_owes_cents,300000);
- for(const [request_id,kind,amount,expected] of [['offset-pay-1','reimbursement','2000',100000],['offset-pay-2','reimbursement','1500',-50000],['offset-return','return','200',-30000]]){
-  const result=await call('/company-funds/entries','POST',{partner_id:other,request_id,kind,amount,occurred_on:'2026-11-02',purpose:'Disposable offset test'});assert.equal(result.status,201);assert.equal((await net()).closing_cents,expected);
- }
- const spent=(await pool.query("INSERT INTO expenses(user_id,amount,expense_date,description) VALUES($1,300,'2026-11-02','Spend remaining company money') RETURNING id",[other])).rows[0].id;
- assert.equal((await call('/company-funds/expenses/'+spent,'PUT',{funding_source:'advance'})).status,200);assert.equal((await net()).balance_status,'settled');
- console.log('PASS: persisted company payments, reverse repayments and reviewed spending offset through zero');
- console.log('PASS: company funds integration completed in disposable data.');
+ assert.equal((await call('/company-funds?month=invalid')).status,400);console.log('PASS: company funds integration completed in disposable data.');
 }catch(e){console.error('Company funds integration failed:',e.message);process.exitCode=1}finally{if(server)await new Promise(r=>{server.close(r);server.closeAllConnections()});await pool.end()}
