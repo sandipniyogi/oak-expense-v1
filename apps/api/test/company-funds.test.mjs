@@ -16,3 +16,34 @@ test('voids excluded while records remain in history',()=>{const e=entry('advanc
 test('both directions of opening adjustments',()=>assert.equal(report([],[entry('opening_due_partner','100'),entry('opening_due_company','30')]).partners[0].closing_cents,7000));
 test('individuals stay separate',()=>{const r=report([expense('20','personal','2026-11-03','b')],[entry('advance','100')]);assert.equal(r.partners[0].closing_cents,-10000);assert.equal(r.partners[1].closing_cents,2000)});
 test('company cash movements differ from business expense total',()=>{const r=report([expense('100'),expense('50','company')],[entry('advance','200'),entry('reimbursement','40'),entry('return','20'),entry('capital','500')]);assert.equal(r.company_cash_out_cents,29000);assert.equal(r.company_cash_in_cents,52000);assert.equal(r.company_business_expense_cents,15000)});
+
+test('company payments offset existing debt, cross zero, and reviewed spending settles the excess',()=>{
+ const costs=[expense('3000')];const movements=[entry('reimbursement','2000')];
+ assert.equal(report(costs,movements).partners[0].company_owes_cents,100000);
+ movements.push(entry('reimbursement','1500'));
+ let p=report(costs,movements).partners[0];assert.equal(p.company_owes_cents,0);assert.equal(p.individual_owes_cents,50000);
+ costs.push(expense('500','advance'));p=report(costs,movements).partners[0];assert.equal(p.closing_cents,0);assert.equal(p.balance_status,'settled');
+});
+test('individual repayment offsets company money held and crosses zero in the opposite direction',()=>{
+ const movements=[entry('advance','1000'),entry('return','400')];
+ let p=report([],movements).partners[0];assert.equal(p.individual_owes_cents,60000);
+ movements.push(entry('return','600'));assert.equal(report([],movements).partners[0].balance_status,'settled');
+ movements.push(entry('return','100'));p=report([],movements).partners[0];assert.equal(p.company_owes_cents,10000);assert.equal(p.individual_owes_cents,0);
+});
+test('a company payment with no existing debt becomes money held, rather than disappearing',()=>{
+ const p=report([],[entry('reimbursement','250')]).partners[0];assert.equal(p.company_owes_cents,0);assert.equal(p.individual_owes_cents,25000);
+});
+test('cent-level offsets settle exactly without rounding',()=>{
+ const p=report([expense('0.29')],[entry('reimbursement','0.10'),entry('reimbursement','0.19')]).partners[0];assert.equal(p.closing_cents,0);assert.equal(p.balance_status,'settled');
+});
+test('prior-period transfers carry forward and later payments affect only their month onward',()=>{
+ const p=report([expense('3000','personal','2026-10-02')],[entry('reimbursement','2000','2026-10-03'),entry('reimbursement','1500','2026-11-02'),entry('return','500','2026-12-01')]).partners[0];
+ assert.equal(p.opening_cents,100000);assert.equal(p.individual_owes_cents,50000);
+});
+test('voiding a company payment restores the amount owed without deleting its history',()=>{
+ const transfer={...entry('reimbursement','2000'),voided_at:'2026-11-03'};
+ assert.equal(report([expense('3000')],[transfer]).partners[0].company_owes_cents,300000);
+});
+test('API advertises the same movement directions used for the calculation',()=>{
+ const r=report();assert.equal(r.movement_balance_effects.reimbursement,-1);assert.equal(r.movement_balance_effects.advance,-1);assert.equal(r.movement_balance_effects.return,1);assert.equal(r.movement_balance_effects.capital,0);assert.equal(r.movement_balance_effects.personal_withdrawal,0);
+});
