@@ -1,3 +1,5 @@
+> **Historical/special-purpose reference.** The [current operations handbook](../handbook/README.md) takes precedence for the configured live stacks. Company funds is now deployed; the separate approved-code job replaces the old automatic deployment path. Follow its deployment and recovery chapters before using older live commands.
+
 # Backup inventory and recovery checklist
 
 A GitHub copy backs up source and setup instructions. It does not back up live databases, receipt files, installed scheduler state or secrets.

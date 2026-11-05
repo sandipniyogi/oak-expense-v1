@@ -1,3 +1,5 @@
+> **Current operations:** Start with the [developer and operations handbook](docs/handbook/README.md). It covers the current nine-app approved-code deployment, separate expense/company-funds synchronization, setup, commands and recovery. Older setup/release notes below may describe superseded workflows.
+
 # The Oak Lounge — oak-expense-v1
 
 One repository for the expense system, restaurant website, inventory, keg, social, AI services and deployment/sync automation.

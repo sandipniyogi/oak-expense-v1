@@ -1,5 +1,6 @@
 'use client';
 import { Fragment, useEffect, useRef, useState } from 'react';
+import IndividualSettlement from './IndividualSettlement';
 import BatchExpenses from './BatchExpenses';
 import CombinedExpenses from './CombinedExpenses';
 import ExpenseReview from './ExpenseReview';
@@ -605,6 +606,7 @@ export default function Home() {
           <div className="simple-stat-card"><span>Alipay</span><strong>{money(report.summary.alipay_total)}</strong><small>{report.summary.alipay_count} transaction{Number(report.summary.alipay_count)===1?'':'s'}</small></div>
         </div>
 
+        <IndividualSettlement api={API} personId={report.filter.user_id} reportVersion={report.generated_at}/>
         {reportFilters.user_id&&<button type="button" disabled={reportBusy} onClick={()=>{const next={...reportFilters,user_id:''};setReportFilters(next);setTransactionSearch('');generateReport(next);}}>← Back to all people</button>}
         <button type="button" aria-expanded={payerView} onClick={()=>setPayerView(v=>!v)}>{payerView?'Hide Paid by summary':'Paid by — who paid what'}</button>
         {payerView&&<PaidByCategorySummary groups={report.paid_by_category||[]} detailsLimited={report.details_limited} onSelect={id=>{const next={...reportFilters,user_id:id||''};setReportFilters(next);generateReport(next);}} busy={reportBusy}/>}

@@ -1,3 +1,5 @@
+> **Historical/special-purpose reference.** The [current operations handbook](handbook/README.md) takes precedence for the configured live stacks. Company funds is now deployed; the separate approved-code job replaces the old automatic deployment path. Follow its deployment and recovery chapters before using older live commands.
+
 # Company funds staging package — recreated v2
 
 This replaces the unavailable transient v1 download. It recreates the company withdrawals/advances and monthly settlement feature, and is not a byte-identical copy of v1. It does not replace tools/ or any sync/deployment control panel.
