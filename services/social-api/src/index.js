@@ -5,11 +5,14 @@ import pg from 'pg';
 const { Pool } = pg;
 import sharp from 'sharp';
 import archiver from 'archiver';
-import { randomUUID, createHash, timingSafeEqual } from 'crypto';
+import { randomUUID, createHash, createHmac, timingSafeEqual } from 'crypto';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
+import { createStaffRouter } from './staffRoutes.js';
+import { staffSession, staffPermission, exactOrigin } from './staffMiddleware.js';
+import { APPROVAL_DECISIONS, mayDecideApproval } from './approvalPolicy.js';
 
 const PORT = Number(process.env.PORT || 4500);
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://oak:oaklocal@db:5432/oak_expenses';
@@ -40,8 +43,56 @@ for (const dir of Object.values(DIRS)) fs.mkdirSync(dir, { recursive: true });
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 const app = express();
-app.use(cors());
+// Restrict cross-origin browser access; same-origin dashboard and CLI requests remain supported.
+// Do not enable wildcard CORS for credentialed administrative endpoints.
+
+// Fail closed until the public origin and staff schema are configured.
+const SOCIAL_AUTH_ORIGIN = process.env.SOCIAL_AUTH_ORIGIN || '';
+const socialOrigin = SOCIAL_AUTH_ORIGIN ? exactOrigin(SOCIAL_AUTH_ORIGIN) : null;
+const socialSession = staffSession(pool);
+const permissionFor = (method, url) => {
+  if (method === 'GET' || method === 'HEAD') return 'read';
+  if (/^\/projects\/[^/]+\/approval\/(approve|reject|changes)$/.test(url)) return 'approve';
+  if (/^\/approval(?:\/|$)/.test(url) || /^\/projects\/[^/]+\/(schedule|mark-published)(?:\/|$)/.test(url))
+    return url.includes('mark-published') ? 'publish.mark' : url.includes('schedule') ? 'schedule' : 'approve';
+  if (/^\/brand(?:\/|$)/.test(url)) return 'brand.write';
+  if (/^\/assets(?:\/|$)/.test(url)) return 'assets.write';
+  if (/^\/campaigns(?:\/|$)/.test(url) || /^\/ai\/plan/.test(url)) return 'campaigns.write';
+  if (/^\/projects(?:\/|$)/.test(url)) return 'projects.write';
+  if (/^\/agent(?:\/|$)/.test(url)) return 'agent.manage';
+  return null; // Unknown mutations must not be authorized implicitly.
+};
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  if (!socialOrigin) return res.status(503).json({ error: 'Staff authentication not configured' });
+  next();
+});
+app.use('/auth', (req, res, next) => {
+  if (req.path === '/login' && req.method === 'POST') return next();
+  if (req.path === '/logout' && req.method === 'POST') return next();
+  if (req.path === '/me' && req.method === 'GET') return next();
+  if (req.path === '/staff' && req.method === 'POST') return next();
+  if (/^\/staff\/[^/]+\/disable$/.test(req.path) && req.method === 'POST') return next();
+  return res.status(404).json({ error: 'Not found' });
+});
+// Parse authentication JSON before login handlers; keep the existing body limits.
+app.use('/auth', express.json({ limit: '16kb' }));
+app.use('/auth', createStaffRouter(pool, { publicOrigin: SOCIAL_AUTH_ORIGIN || 'http://localhost:3100', secureCookies: process.env.SOCIAL_COOKIE_SECURE !== 'false' }));
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  // Legacy Basic Auth approval page must never bypass role-based authentication.
+  if (req.path === '/approval' || req.path.startsWith('/approval/')) return res.status(410).json({ error: 'Legacy approval disabled; use staff approval workflow' });
+  const permission = permissionFor(req.method, req.path);
+  if (!permission) return res.status(404).json({ error: 'Not found' });
+  socialSession(req, res, err => {
+    if (err) return next(err);
+    const authorize = () => staffPermission(permission)(req, res, next);
+    if (req.method === 'GET' || req.method === 'HEAD') return authorize();
+    socialOrigin(req, res, authorize);
+  });
+});
 app.use(express.json({ limit: '8mb' }));
+app.use(express.urlencoded({ extended: false, limit: '16kb' }));
 app.use('/files/assets', express.static(DIRS.assets));
 app.use('/files/thumbs', express.static(DIRS.thumbs));
 app.use('/files/renders', express.static(DIRS.renders));
@@ -450,7 +501,8 @@ async function buildCampaignProposal({ brief, objective = '', platforms = [], la
   return proposal;
 }
 
-async function saveCampaignFromProposal({ brief, objective, platforms, languages, proposal, source = 'manual' }) {
+async function saveCampaignFromProposal({ brief, objective, platforms, languages, proposal, source = 'manual', actorId }) {
+  if (!actorId) throw new Error('Authenticated staff required');
   const brandDefaults = (await pool.query('SELECT default_template, default_subtitle_mode FROM oak_social_brand WHERE id=1')).rows[0] || {};
   const client = await pool.connect();
   try {
@@ -466,14 +518,14 @@ async function saveCampaignFromProposal({ brief, objective, platforms, languages
       const id = randomUUID();
       const row = (await client.query(`
         INSERT INTO oak_social_projects(
-          id,campaign_id,platform,format,title,hook,caption,hashtags,language,aspect_ratio,duration_seconds,status,scenes,template_style,subtitle_mode
-        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12,$13,$14)
+          id,campaign_id,platform,format,title,hook,caption,hashtags,language,aspect_ratio,duration_seconds,status,scenes,template_style,subtitle_mode,created_by_staff_id,last_edited_by_staff_id
+        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12,$13,$14,$15,$15)
         RETURNING *
       `, [
         id, campaignId, post.platform || 'instagram', post.format || 'still', post.title || '', post.hook || '',
         post.caption || '', post.hashtags || [], post.language || 'English', post.aspect_ratio || '4:5',
         Number(post.duration_seconds || 15), JSON.stringify(post.scenes || []),
-        brandDefaults.default_template || 'classic', brandDefaults.default_subtitle_mode || 'bilingual'
+        brandDefaults.default_template || 'classic', brandDefaults.default_subtitle_mode || 'bilingual', actorId
       ])).rows[0];
       projects.push(row);
     }
@@ -633,7 +685,24 @@ async function buildOverlayPng({ width, height, text, subtitle = '', brand, logo
   return await canvas.toBuffer();
 }
 
-async function renderStill(project) {
+// Compare-and-swap prevents a slow render/export from overwriting a concurrent edit
+// or preserving an approval for content that has since changed. The approved hash
+// includes these artifact paths, so every successful update requires reapproval.
+export async function commitGeneratedArtifact(project, actorId, field, outputName) {
+  if (!['cover_path', 'render_path', 'export_path'].includes(field)) throw new Error('Invalid artifact field');
+  if (!actorId) throw new Error('Authenticated staff required');
+  const result = await pool.query(
+    `UPDATE oak_social_projects SET ${field}=$1, status='draft', scheduled_for=NULL,
+       last_edited_by_staff_id=$2, updated_at=now()
+     WHERE id=$3 AND updated_at IS NOT DISTINCT FROM $4
+       AND status NOT IN ('scheduled', 'published') RETURNING id`,
+    [outputName, actorId, project.id, project.updated_at]
+  );
+  if (result.rowCount !== 1) throw new Error('Project changed while generating artifact; retry from the latest draft');
+}
+
+async function renderStill(project, actorId) {
+  if (['scheduled', 'published'].includes(project.status)) throw new Error('Cannot regenerate a scheduled or published project');
   const { width, height } = dimensionsForRatio(project.aspect_ratio);
   const scenes = Array.isArray(project.scenes) ? project.scenes : [];
   const ids = [...scenes.map(s => s.asset_id).filter(Boolean), project.cover_asset_id].filter(Boolean);
@@ -669,7 +738,12 @@ async function renderStill(project) {
   } finally {
     if (tempFrame) await fsp.rm(tempFrame, { force: true }).catch(() => {});
   }
-  await pool.query(`UPDATE oak_social_projects SET cover_path=$1, updated_at=now() WHERE id=$2`, [outputName, project.id]);
+  try {
+    await commitGeneratedArtifact(project, actorId, 'cover_path', outputName);
+  } catch (error) {
+    await fsp.rm(path.join(DIRS.renders, outputName), { force: true }).catch(() => {});
+    throw error;
+  }
   await audit('cover_rendered', 'project', project.id, { output: outputName, cover_asset_id: project.cover_asset_id || null });
   return outputName;
 }
@@ -681,7 +755,8 @@ async function makeOverlayPng(opts) {
   return file;
 }
 
-async function renderVideo(project) {
+async function renderVideo(project, actorId) {
+  if (['scheduled', 'published'].includes(project.status)) throw new Error('Cannot regenerate a scheduled or published project');
   const scenes = Array.isArray(project.scenes) ? project.scenes : [];
   if (!scenes.length) throw new Error('Add at least one scene before rendering video.');
   const { width, height } = dimensionsForRatio(project.aspect_ratio || '9:16');
@@ -734,7 +809,12 @@ async function renderVideo(project) {
     } else {
       await fsp.copyFile(joined, outputPath);
     }
-    await pool.query(`UPDATE oak_social_projects SET render_path=$1, updated_at=now() WHERE id=$2`, [outputName, project.id]);
+    try {
+    await commitGeneratedArtifact(project, actorId, 'render_path', outputName);
+  } catch (error) {
+    await fsp.rm(path.join(DIRS.renders, outputName), { force: true }).catch(() => {});
+    throw error;
+  }
     await audit('video_rendered', 'project', project.id, { output: outputName, scenes: segmentFiles.length, music_asset_id: project.music_asset_id || null });
     return outputName;
   } finally {
@@ -742,7 +822,8 @@ async function renderVideo(project) {
   }
 }
 
-async function exportProject(project) {
+async function exportProject(project, actorId) {
+  if (['scheduled', 'published'].includes(project.status)) throw new Error('Cannot regenerate a scheduled or published project');
   const outputName = `oak-social-${project.platform}-${project.id}-${Date.now()}.zip`;
   const outputPath = path.join(DIRS.exports, outputName);
   await new Promise((resolve, reject) => {
@@ -777,7 +858,12 @@ async function exportProject(project) {
     }
     archive.finalize();
   });
-  await pool.query(`UPDATE oak_social_projects SET export_path=$1, updated_at=now() WHERE id=$2`, [outputName, project.id]);
+  try {
+    await commitGeneratedArtifact(project, actorId, 'export_path', outputName);
+  } catch (error) {
+    await fsp.rm(path.join(DIRS.exports, outputName), { force: true }).catch(() => {});
+    throw error;
+  }
   await audit('publish_package_created', 'project', project.id, { output: outputName });
   return outputName;
 }
@@ -786,7 +872,8 @@ async function exportProject(project) {
 function approvalAuth(req, res, next) {
   if (!APPROVAL_USER || !APPROVAL_PASSWORD) return res.status(503).json({ error: 'Approval credentials are not configured' });
   const header = req.get('authorization') || '';
-  const raw = header.startsWith('Basic ') ? Buffer.from(header.slice(6), 'base64').toString('utf8') : '';
+  let raw = '';
+  try { if (/^Basic [A-Za-z0-9+/]+={0,2}$/.test(header)) raw = Buffer.from(header.slice(6), 'base64').toString('utf8'); } catch {}
   const colon = raw.indexOf(':');
   const user = colon >= 0 ? raw.slice(0, colon) : '';
   const password = colon >= 0 ? raw.slice(colon + 1) : '';
@@ -800,6 +887,29 @@ function approvalAuth(req, res, next) {
     return res.status(401).send('Authentication required');
   }
   res.set('Cache-Control', 'no-store');
+  next();
+}
+
+// Reject cross-site browser mutations; CLI requests without Origin/Referer still need Basic auth.
+function requireSameOrigin(req, res, next) {
+  const source = req.get('origin') || req.get('referer');
+  if (!source) return next();
+  try {
+    const actual = new URL(source);
+    const expected = new URL(SOCIAL_PUBLIC_URL);
+    if (actual.origin === expected.origin && expected.protocol === 'https:') return next();
+  } catch {}
+  return res.status(403).json({ error: 'Origin check failed' });
+}
+
+function approvalCsrfToken(id, decision) {
+  return createHmac('sha256', APPROVAL_PASSWORD).update(`oak-social-approval:v2:${id}:${decision}`).digest('hex');
+}
+function verifyApprovalCsrf(req, res, next) {
+  const expected = approvalCsrfToken(req.params.id, req.params.decision);
+  const supplied = typeof req.body?._csrf === 'string' ? req.body._csrf : '';
+  if (!/^[a-f0-9]{64}$/.test(supplied) || !timingSafeEqual(Buffer.from(expected), Buffer.from(supplied)))
+    return res.status(403).send('Invalid approval form token');
   next();
 }
 
@@ -821,24 +931,57 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-app.get('/approval', approvalAuth, asyncRoute(async (_req,res) => {
+// Staff approval API. Legacy HTML approval routes remain disabled by the auth gate.
+// Serialize decisions with project edits/scheduling using a project row lock.
+app.post('/projects/:id/approval/:decision', asyncRoute(async (req, res) => {
+  const decision = APPROVAL_DECISIONS[req.params.decision];
+  if (!decision) return res.status(400).json({ error: 'Invalid approval decision' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM oak_social_projects WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const project = rows[0];
+    if (!project) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Project not found' }); }
+    if (!mayDecideApproval(req.staff, project, decision)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Approval not permitted for this project' });
+    }
+    if (project.status === 'published' || project.status === 'scheduled') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Cannot change approval after scheduling or publishing' });
+    }
+    const hash = approvalHash(project);
+    await client.query(`INSERT INTO oak_social_approvals(project_id,decision,content_hash,decided_by)
+      VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET
+      decision=EXCLUDED.decision,content_hash=EXCLUDED.content_hash,
+      decided_by=EXCLUDED.decided_by,decided_at=now()`,
+      [project.id, decision, hash, req.staff.id]);
+    await client.query('UPDATE oak_social_projects SET status=$1,updated_at=now() WHERE id=$2',
+      [decision, project.id]);
+    await client.query(`INSERT INTO oak_social_staff_audit(actor_id,action,target_id,details)
+      VALUES($1,$2,$3,$4::jsonb)`, [req.staff.id, 'approval.decision', project.id, JSON.stringify({ decision, content_hash: hash })]);
+    await client.query('COMMIT');
+    return res.json({ ok: true, project_id: project.id, decision });
+  } catch (err) { await client.query('ROLLBACK'); throw err; }
+  finally { client.release(); }
+}));
+
+app.get('/approval', asyncRoute(async (_req,res) => {
   const rows = (await pool.query(`SELECT p.*, a.decision, a.content_hash
     FROM oak_social_projects p LEFT JOIN oak_social_approvals a ON a.project_id=p.id
     ORDER BY p.created_at DESC LIMIT 100`)).rows;
   const cards = rows.map(p => {
     const valid = p.decision === 'approved' && p.content_hash === approvalHash(p);
     const status = valid ? 'approved' : p.decision === 'approved' ? 'changed_since_approval' : p.decision || 'pending';
-    const btn = (decision,label) => `<form method="POST" action="/approval/${encodeURIComponent(p.id)}/${decision}"><button>${label}</button></form>`;
+    const btn = (decision,label) => `<form method="POST" action="/approval/${encodeURIComponent(p.id)}/${decision}"><input type="hidden" name="_csrf" value="${approvalCsrfToken(p.id, decision)}"><button>${label}</button></form>`;
     return `<article><small>${escapeHtml(p.platform)} · ${escapeHtml(p.language)} · ${escapeHtml(status)}</small><h2>${escapeHtml(p.title)}</h2><p>${escapeHtml(p.caption)}</p><p>${escapeHtml((p.hashtags||[]).join(' '))}</p><div class="actions">${btn('approve','Approve')}${btn('changes','Request changes')}${btn('reject','Reject')}</div></article>`;
   }).join('');
   res.type('html').send(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Oak Social Approval</title><style>body{font:16px system-ui;background:#101820;color:#f5f5f5;max-width:760px;margin:auto;padding:20px}article{background:#20303a;border-radius:14px;padding:18px;margin:14px 0;overflow-wrap:anywhere}small{color:#c0c9ce}p{white-space:pre-wrap}button{padding:12px;border-radius:9px;background:#d9b382;border:0;font-weight:bold;cursor:pointer}.actions{display:flex;flex-wrap:wrap;gap:8px}</style></head><body><h1>Oak Social · Approval Inbox</h1><p>Review drafts. Approval never publishes automatically.</p>${cards || '<p>No projects yet.</p>'}</body></html>`);
 }));
 
 // Browser form POSTs use Basic auth and Origin/Referer checks as CSRF defense.
-app.post('/approval/:id/:decision', approvalAuth, asyncRoute(async (req,res) => {
-  const origin = req.get('origin') || req.get('referer') || '';
-  const expected = SOCIAL_PUBLIC_URL;
-  if (!expected || !origin.startsWith(expected + '/') && origin !== expected) return res.status(403).send('Origin check failed');
+app.post('/approval/:id/:decision', asyncRoute(async (req,res) => {
+  // Form token protects against cross-site requests even when Origin is absent.
   const decisions = { approve:'approved', reject:'rejected', changes:'changes_requested' };
   const decision = decisions[req.params.decision];
   if (!decision) return res.status(400).send('Invalid decision');
@@ -882,6 +1025,8 @@ async function telegramOutboxTick() {
           body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true}),signal:controller.signal
         }); } finally { clearTimeout(timeout); }
         if (!response.ok) throw new Error(`Telegram HTTP ${response.status}`);
+        const telegramResult = await response.json();
+        if (telegramResult?.ok !== true) throw new Error(`Telegram rejected message: ${String(telegramResult?.description || 'unknown').slice(0,100)}`);
         await client.query(`UPDATE oak_social_notification_outbox SET status='sent',attempts=attempts+1,sent_at=now(),last_error=NULL WHERE id=$1`,[job.id]);
       } catch(e) {
         await client.query(`UPDATE oak_social_notification_outbox SET status='failed',attempts=attempts+1,
@@ -1026,7 +1171,8 @@ app.post('/campaigns', asyncRoute(async (req, res) => {
     platforms: Array.isArray(body.platforms) ? body.platforms : [],
     languages: Array.isArray(body.languages) ? body.languages : [],
     proposal: body.proposal,
-    source: body.source || 'manual'
+    source: body.source || 'manual',
+    actorId: req.staff.id
   });
   res.status(201).json(result);
 }));
@@ -1047,66 +1193,87 @@ app.get('/projects/:id', asyncRoute(async (req, res) => {
   res.json(serializeProject(row));
 }));
 
-app.put('/projects/:id', approvalAuth, asyncRoute(async (req, res) => {
+app.put('/projects/:id', asyncRoute(async (req, res) => {
   const body = req.body || {};
-  if (body.status && !['draft','changes_requested','rejected'].includes(body.status))
-    return res.status(403).json({ error: 'Status transitions require approval workflow' });
+  // Content edits always return a project to draft. Clients cannot preserve
+  // an approved/scheduled/published status while changing the approval hash.
+  if (body.status && body.status !== 'draft')
+    return res.status(403).json({ error: 'Content edits must return to draft' });
   const row = (await pool.query(`
     UPDATE oak_social_projects SET
       platform=$1, format=$2, title=$3, hook=$4, caption=$5, hashtags=$6,
       language=$7, aspect_ratio=$8, duration_seconds=$9, scenes=$10, status=$11,
       template_style=$12, subtitle_mode=$13, cover_asset_id=$14, music_asset_id=$15,
-      music_volume=$16, platform_preset=$17, updated_at=now()
+      music_volume=$16, platform_preset=$17, last_edited_by_staff_id=$19, updated_at=now()
     WHERE id=$18 RETURNING *
   `, [
     body.platform || 'instagram', body.format || 'still', body.title || '', body.hook || '', body.caption || '',
     parseTags(body.hashtags), body.language || 'English', body.aspect_ratio || '4:5', Number(body.duration_seconds || 15),
-    JSON.stringify(Array.isArray(body.scenes) ? body.scenes : []), body.status || 'draft',
+    JSON.stringify(Array.isArray(body.scenes) ? body.scenes : []), 'draft',
     body.template_style || 'classic', body.subtitle_mode || 'bilingual', body.cover_asset_id || null, body.music_asset_id || null,
-    Math.max(0, Math.min(1, Number(body.music_volume ?? 0.18))), body.platform_preset || '', req.params.id
+    Math.max(0, Math.min(1, Number(body.music_volume ?? 0.18))), body.platform_preset || '', req.params.id, req.staff.id
   ])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   await audit('project_updated', 'project', req.params.id, { platform: row.platform, format: row.format });
   res.json(serializeProject(row));
 }));
 
-app.post('/projects/:id/render/still', approvalAuth, asyncRoute(async (req, res) => {
+app.post('/projects/:id/render/still', asyncRoute(async (req, res) => {
   const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
-  const output = await renderStill(row);
+  const output = await renderStill(row, req.staff.id);
   res.json({ ok: true, render_url: relativeUrl('renders', output), cover_url: relativeUrl('renders', output) });
 }));
 
-app.post('/projects/:id/render/video', approvalAuth, asyncRoute(async (req, res) => {
+app.post('/projects/:id/render/video', asyncRoute(async (req, res) => {
   const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
-  const output = await renderVideo(row);
+  const output = await renderVideo(row, req.staff.id);
   res.json({ ok: true, render_url: relativeUrl('renders', output) });
 }));
 
-app.post('/projects/:id/export', approvalAuth, asyncRoute(async (req, res) => {
+app.post('/projects/:id/export', asyncRoute(async (req, res) => {
   const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
-  const output = await exportProject(row);
+  const output = await exportProject(row, req.staff.id);
   res.json({ ok: true, export_url: relativeUrl('exports', output) });
 }));
 
-app.post('/projects/:id/schedule', approvalAuth, asyncRoute(async (req, res) => {
-  if (!await hasValidApproval(pool, req.params.id)) return res.status(403).json({ error: 'Current content requires approval before scheduling' });
+async function approvedStatusTransition(id, status, scheduledFor = null) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query('SELECT id FROM oak_social_projects WHERE id=$1 FOR UPDATE', [id]);
+    if (!result.rows.length) { await client.query('ROLLBACK'); return { missing: true }; }
+    if (!await hasValidApproval(client, id)) {
+      await client.query('ROLLBACK');
+      return { denied: true };
+    }
+    const { rows } = await client.query(
+      `UPDATE oak_social_projects SET status=$1,scheduled_for=COALESCE($2,scheduled_for),updated_at=now() WHERE id=$3 RETURNING *`,
+      [status, scheduledFor, id]);
+    await client.query('COMMIT');
+    return { row: rows[0] };
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+
+app.post('/projects/:id/schedule', asyncRoute(async (req, res) => {
   const when = req.body?.scheduled_for ? new Date(req.body.scheduled_for) : null;
   if (!when || Number.isNaN(when.getTime())) return res.status(400).json({ error: 'Valid scheduled_for is required' });
-  const row = (await pool.query(`UPDATE oak_social_projects SET scheduled_for=$1,status='scheduled',updated_at=now() WHERE id=$2 RETURNING *`, [when.toISOString(), req.params.id])).rows[0];
-  if (!row) return res.status(404).json({ error: 'Project not found' });
+  const result = await approvedStatusTransition(req.params.id, 'scheduled', when.toISOString());
+  if (result.missing) return res.status(404).json({ error: 'Project not found' });
+  if (result.denied) return res.status(403).json({ error: 'Current content requires approval before scheduling' });
   await audit('project_scheduled', 'project', req.params.id, { scheduled_for: when.toISOString() });
-  res.json(serializeProject(row));
+  res.json(serializeProject(result.row));
 }));
 
-app.post('/projects/:id/mark-published', approvalAuth, asyncRoute(async (req, res) => {
-  if (!await hasValidApproval(pool, req.params.id)) return res.status(403).json({ error: 'Current content requires approval before marking published' });
-  const row = (await pool.query(`UPDATE oak_social_projects SET status='published',updated_at=now() WHERE id=$1 RETURNING *`, [req.params.id])).rows[0];
-  if (!row) return res.status(404).json({ error: 'Project not found' });
+app.post('/projects/:id/mark-published', asyncRoute(async (req, res) => {
+  const result = await approvedStatusTransition(req.params.id, 'published');
+  if (result.missing) return res.status(404).json({ error: 'Project not found' });
+  if (result.denied) return res.status(403).json({ error: 'Current content requires approval before marking published' });
   await audit('project_marked_published', 'project', req.params.id, {});
-  res.json(serializeProject(row));
+  res.json(serializeProject(result.row));
 }));
 
 app.get('/agent/settings', asyncRoute(async (_req, res) => {
