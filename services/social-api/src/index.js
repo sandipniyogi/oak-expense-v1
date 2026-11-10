@@ -15,6 +15,10 @@ const PORT = Number(process.env.PORT || 4500);
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://oak:oaklocal@db:5432/oak_expenses';
 const OLLAMA_URL = (process.env.OLLAMA_URL || 'http://host.docker.internal:11434').replace(/\/$/, '');
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:8b';
+const AI_PROVIDER = (process.env.SOCIAL_AI_PROVIDER || 'openai').toLowerCase();
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 120000);
+
 const STORAGE = process.env.SOCIAL_STORAGE_ROOT || '/app/storage';
 const AGENT_TICK_MS = Number(process.env.SOCIAL_AGENT_TICK_MS || 900000);
 const BUILD = 'oak-social-studio-v1.1-brand-editor';
@@ -160,7 +164,7 @@ async function initDb() {
       weekday INTEGER NOT NULL DEFAULT 1 CHECK (weekday BETWEEN 1 AND 7),
       hour INTEGER NOT NULL DEFAULT 9 CHECK (hour BETWEEN 0 AND 23),
       platforms TEXT[] NOT NULL DEFAULT ARRAY['instagram','redbook','wechat_channels','tiktok'],
-      goal TEXT NOT NULL DEFAULT 'Create a premium weekly Oak Lounge campaign using recent real photos and videos.',
+      goal TEXT NOT NULL DEFAULT 'Create a premium daily Oak Lounge campaign using recent real photos and videos.',
       last_run_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
@@ -267,6 +271,57 @@ async function makeThumbnail(assetPath, mediaType, storedName) {
   return null;
 }
 
+async function fetchOpenAIJson(system, user, _schema) {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not configured');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        instructions: system + '\nReturn only a valid JSON object with campaign_title, summary and posts. Do not use markdown fences.',
+        input: user,
+        text: { format: { type: 'json_object' } },
+        store: false
+      }),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      // Avoid logging provider response bodies, which can contain sensitive information.
+      throw new Error(`OpenAI returned HTTP ${response.status}`);
+    }
+    const result = await response.json();
+    const content = (result.output || []).flatMap(x => x.content || [])
+      .filter(x => x.type === 'output_text').map(x => x.text).join('');
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.posts) ||
+        typeof parsed.campaign_title !== 'string' || typeof parsed.summary !== 'string') {
+      throw new Error('OpenAI returned an invalid campaign structure');
+    }
+    for (const post of parsed.posts) {
+      if (!post || typeof post !== 'object' || !Array.isArray(post.scenes) ||
+          !Array.isArray(post.hashtags) || typeof post.caption !== 'string') {
+        throw new Error('OpenAI returned an invalid post structure');
+      }
+    }
+    return parsed;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchCampaignJson(system, user, schema) {
+  if (AI_PROVIDER === 'ollama') return fetchOllamaJson(system, user, schema);
+  if (AI_PROVIDER !== 'openai') throw new Error('Unsupported SOCIAL_AI_PROVIDER');
+  // Fail closed: never silently switch providers or spend money unexpectedly.
+  return fetchOpenAIJson(system, user, schema);
+}
+
 async function fetchOllamaJson(system, user, schema, timeoutMs = 180000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -356,7 +411,7 @@ async function buildCampaignProposal({ brief, objective = '', platforms = [], la
 
   const user = `Campaign brief:\n${brief}\n\nObjective:\n${objective || 'Build awareness and visits to Oak Lounge.'}\n\nRequested platforms: ${platforms.join(', ') || 'Instagram, Facebook, Redbook, WeChat Channels, TikTok'}\nRequested languages: ${languages.join(', ') || (brand.languages || []).join(', ')}\n\nAvailable assets:\n${assetText}\n\nCreate one strong draft for each requested platform. Keep short-video scene plans editable and practical. For still/carousel posts, scenes represent image slots.`;
 
-  const proposal = await fetchOllamaJson(system, user, campaignSchema);
+  const proposal = await fetchCampaignJson(system, user, campaignSchema);
   proposal.posts = (proposal.posts || []).map(post => ({
     ...post,
     platform: String(post.platform || '').toLowerCase().replace(/\s+/g, '_'),
@@ -926,29 +981,73 @@ app.put('/agent/settings', asyncRoute(async (req, res) => {
   res.json(row);
 }));
 
+// A session-scoped lock serializes manual and scheduled agent requests across instances.
+// Keep the lock connection until campaign creation and last_run_at update finish.
+const SOCIAL_AGENT_LOCK_KEY = 80421963;
+
 async function runAgentDraft(reason = 'manual') {
-  const settings = (await pool.query('SELECT * FROM oak_social_agent_settings WHERE id=1')).rows[0];
-  const assets = (await pool.query(`SELECT id FROM oak_social_assets WHERE is_active=true ORDER BY created_at DESC LIMIT 20`)).rows;
-  const brief = `${settings.goal}\nUse recent Oak Lounge media. Produce a multi-platform weekly draft. This is a draft for human approval, not an instruction to auto-publish.`;
-  const proposal = await buildCampaignProposal({
-    brief,
-    objective: 'Maintain a consistent weekly Oak Lounge social presence and encourage visits.',
-    platforms: settings.platforms || [],
-    languages: ['English', 'Simplified Chinese'],
-    assetIds: assets.map(a => a.id)
-  });
-  const saved = await saveCampaignFromProposal({
-    brief,
-    objective: 'Weekly social presence',
-    platforms: settings.platforms || [],
-    languages: ['English', 'Simplified Chinese'],
-    proposal,
-    source: 'weekly_agent'
-  });
-  await pool.query(`UPDATE oak_social_campaigns SET status='agent_draft' WHERE id=$1`, [saved.campaign_id]);
-  await pool.query(`UPDATE oak_social_agent_settings SET last_run_at=now() WHERE id=1`);
-  await audit('weekly_agent_draft_created', 'campaign', saved.campaign_id, { reason });
-  return saved;
+  const lockClient = await pool.connect();
+  let locked = false;
+  try {
+    const result = await lockClient.query('SELECT pg_try_advisory_lock($1) AS acquired', [SOCIAL_AGENT_LOCK_KEY]);
+    locked = result.rows[0]?.acquired === true;
+    if (!locked) {
+      const err = new Error('Social agent generation is already in progress');
+      err.status = 409;
+      throw err;
+    }
+
+    const settings = (await pool.query('SELECT * FROM oak_social_agent_settings WHERE id=1')).rows[0];
+    if (!settings) throw new Error('Social agent settings are missing');
+
+    // Only scheduled runs are limited to one per local calendar day.
+    // Query the campaign record as well as last_run_at, so a failure after
+    // saving a campaign cannot create a duplicate on the next scheduler tick.
+    if (reason === 'scheduled_daily_agent') {
+      const zone = settings.timezone || 'Asia/Shanghai';
+      const today = zonedParts(new Date(), zone).dateKey;
+      const existing = await pool.query(`
+        SELECT id FROM oak_social_campaigns
+        WHERE source='daily_agent' AND ai_proposal->>'_oak_agent_reason'='scheduled_daily_agent'
+          AND (created_at AT TIME ZONE $1)::date = $2::date
+        LIMIT 1
+      `, [zone, today]);
+      if (existing.rowCount) return { skipped: true, reason: 'already_generated_today' };
+      if (settings.last_run_at && zonedParts(new Date(settings.last_run_at), zone).dateKey === today) {
+        return { skipped: true, reason: 'already_run_today' };
+      }
+    }
+
+    const assets = (await pool.query(`SELECT id FROM oak_social_assets WHERE is_active=true ORDER BY created_at DESC LIMIT 20`)).rows;
+    const brief = `${settings.goal}\nUse recent Oak Lounge media. Produce one multi-platform daily campaign draft. This is a draft for human approval, not an instruction to auto-publish.`;
+    const proposal = await buildCampaignProposal({
+      brief,
+      objective: 'Maintain a consistent daily Oak Lounge social presence and encourage visits.',
+      platforms: settings.platforms || [],
+      languages: ['English', 'Simplified Chinese'],
+      assetIds: assets.map(a => a.id)
+    });
+    // Persist the trigger alongside the proposal to support durable deduplication.
+    const saved = await saveCampaignFromProposal({
+      brief,
+      objective: 'Daily social presence',
+      platforms: settings.platforms || [],
+      languages: ['English', 'Simplified Chinese'],
+      proposal: { ...proposal, _oak_agent_reason: reason },
+      source: 'daily_agent'
+    });
+    await pool.query(`UPDATE oak_social_campaigns SET status='agent_draft' WHERE id=$1`, [saved.campaign_id]);
+    await pool.query(`UPDATE oak_social_agent_settings SET last_run_at=now() WHERE id=1`);
+    await audit('daily_agent_draft_created', 'campaign', saved.campaign_id, { reason });
+    return saved;
+  } finally {
+    if (locked) {
+      try { await lockClient.query('SELECT pg_advisory_unlock($1)', [SOCIAL_AGENT_LOCK_KEY]); }
+      finally { lockClient.release(); }
+    } else {
+      lockClient.release();
+    }
+  }
 }
 
 app.post('/agent/run-now', asyncRoute(async (_req, res) => {
@@ -971,12 +1070,12 @@ async function agentTick() {
     if (!settings?.enabled) return;
     const now = new Date();
     const z = zonedParts(now, settings.timezone || 'Asia/Shanghai');
-    if (z.weekday !== Number(settings.weekday) || z.hour !== Number(settings.hour)) return;
+    if (z.hour !== Number(settings.hour)) return;
     if (settings.last_run_at) {
       const last = zonedParts(new Date(settings.last_run_at), settings.timezone || 'Asia/Shanghai');
       if (last.dateKey === z.dateKey) return;
     }
-    await runAgentDraft('scheduled_weekly_agent');
+    await runAgentDraft('scheduled_daily_agent');
   } catch (err) {
     console.error('Social agent tick failed:', err.message);
   }
@@ -984,7 +1083,7 @@ async function agentTick() {
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  res.status(500).json({ error: err.message || 'Unexpected server error' });
+  res.status(err.status === 409 ? 409 : 500).json({ error: err.message || 'Unexpected server error' });
 });
 
 await initDb();
