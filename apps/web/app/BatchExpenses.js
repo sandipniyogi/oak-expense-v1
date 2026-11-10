@@ -1,35 +1,13 @@
 'use client';
-import {useEffect,useState} from 'react';
+import {useState} from 'react';
 
 import {expenseApiBase,newUploadId} from './expenseApi';
+import PaymentScreenshotPreview from './PaymentScreenshotPreview';
 import ExpenseReview from './ExpenseReview';
 import {batchManual,batchReviewError,batchPayload} from './batchReview.mjs';
 const API=expenseApiBase();
 const norm=s=>String(s||'').toLowerCase().replace(/[>›»→]/g,' ').replace(/[^a-z0-9\u3400-\u9fff]+/g,' ').trim();
 const formFor=(user='')=>({user_id:user,category_id:'',amount:'',merchant:'',payment_method:'',expense_date:'',description:'',reimbursement_required:false});
-
-function Preview({file}){
-  const [src,setSrc]=useState('');
-  const [zoom,setZoom]=useState(100);
-  useEffect(()=>{const url=URL.createObjectURL(file);setSrc(url);return()=>URL.revokeObjectURL(url);},[file]);
-  if(!src)return null;
-  return <div style={{margin:'12px 0'}}>
-    <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:8}}>
-      <button type="button" aria-label={`Zoom out ${file.name}`} disabled={zoom<=100} onClick={()=>setZoom(z=>Math.max(100,z-50))}>−</button>
-      <label style={{display:'flex',alignItems:'center',gap:8}}>Image zoom
-        <input type="range" min="100" max="500" step="25" value={zoom} onChange={e=>setZoom(Number(e.target.value))} aria-label={`Zoom ${file.name}`}/>
-        <span>{zoom}%</span>
-      </label>
-      <button type="button" aria-label={`Zoom in ${file.name}`} disabled={zoom>=500} onClick={()=>setZoom(z=>Math.min(500,z+50))}>+</button>
-      <button type="button" onClick={()=>setZoom(100)}>Reset zoom</button>
-      <a href={src} target="_blank" rel="noopener noreferrer" className="button-link">Open full image</a>
-    </div>
-    <div style={{overflow:'auto',maxHeight:360,maxWidth:'100%',border:'1px solid #e5dfd5',borderRadius:10,padding:8,background:'#f7f4ee'}}>
-      <img src={src} alt={`Screenshot ${file.name}`} style={{display:'block',width:`${180*zoom/100}px`,maxWidth:'none',height:'auto'}}/>
-    </div>
-    <p className="message">Use the slider or buttons to enlarge the image. Scroll inside the image box to inspect it.</p>
-  </div>;
-}
 
 export default function BatchExpenses({meta,onSaved}){
   const [items,setItems]=useState([]);
@@ -117,7 +95,7 @@ export default function BatchExpenses({meta,onSaved}){
       return <div key={item.id} style={{border:'1px solid #e5dfd5',borderRadius:14,padding:16,marginTop:14}}>
         <div className="row"><strong>{index+1}. {item.file.name}</strong><span>{item.status}</span></div>
         {!['saved','uncertain'].includes(item.status)&&<label>Screenshot mode <select disabled={running} value={batchManual(item)?'manual':'ocr'} onChange={e=>update(item.id,{mode:e.target.value,aiReview:null,confirmedFields:'',data:item.data?{...item.data,manual:e.target.value==='manual'}:null})}><option value="ocr">Alipay / WeChat OCR</option><option value="manual">Manual / Other app</option></select></label>}
-        <Preview file={item.file}/>
+        <PaymentScreenshotPreview file={item.file}/>
         {item.error&&<p className="warn" role="alert">{item.error}</p>}
         {item.data?.duplicate&&<p className="warn">Possible duplicate already saved: ¥{item.data.duplicate.amount} on {item.data.duplicate.expense_date||'unknown date'}.</p>}
         {duplicateInBatch&&<p className="warn">This screenshot also appears in this batch. Check before saving.</p>}

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from rapidocr import RapidOCR
+from red_ledger import read_red_ledger
 import tempfile
 import os
 import re
@@ -1248,7 +1249,7 @@ def health():
 
 
 @app.post("/extract")
-async def extract(file: UploadFile = File(...)):
+async def extract(file: UploadFile = File(...), mode: str = "payment"):
     if (
         not file.content_type
         or not file.content_type.startswith("image/")
@@ -1271,6 +1272,16 @@ async def extract(file: UploadFile = File(...)):
         image_path = tmp.name
 
     try:
+        if mode == "red_ledger":
+            with Image.open(image_path) as original:
+                image = ImageOps.exif_transpose(original)
+                if image.width * image.height > 16_000_000:
+                    raise HTTPException(status_code=400, detail="Crop the screenshot to the payment table.")
+                try:
+                    return read_red_ledger(image, lambda pixels: result_entries(ocr(pixels)))
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         primary_result = ocr(image_path)
         primary_lines = [clean_line(value) for value in safe_list(getattr(primary_result, "txts", None)) if clean_line(value)]
         primary_joined = "\n".join(primary_lines)
@@ -1382,6 +1393,8 @@ async def extract(file: UploadFile = File(...)):
             },
         }
 
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=500,

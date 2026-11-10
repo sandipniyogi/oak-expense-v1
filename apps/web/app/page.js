@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import IndividualSettlement from './IndividualSettlement';
 import BatchExpenses from './BatchExpenses';
 import CombinedExpenses from './CombinedExpenses';
+import PaymentScreenshotPreview from './PaymentScreenshotPreview';
 import ExpenseReview from './ExpenseReview';
 import SpendingReview from './SpendingReview';
 import PaidByCategorySummary from './PaidByCategorySummary';
@@ -537,6 +538,7 @@ export default function Home() {
           </span>
           {file&&<span className="file-ready">✓ Image selected successfully</span>}
         </label>
+        <PaymentScreenshotPreview file={file}/>
         {captureMode==='ocr'
           ? <button disabled={!file||busy} onClick={runOcr}>{busy?'Working…':'Read screenshot'}</button>
           : <p className="message">Enter the amount and details manually on the right. The screenshot uploads automatically when you save.</p>}
