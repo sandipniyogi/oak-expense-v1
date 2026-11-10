@@ -5,7 +5,7 @@ import pg from 'pg';
 const { Pool } = pg;
 import sharp from 'sharp';
 import archiver from 'archiver';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash, timingSafeEqual } from 'crypto';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
@@ -22,6 +22,12 @@ const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 120000);
 const STORAGE = process.env.SOCIAL_STORAGE_ROOT || '/app/storage';
 const AGENT_TICK_MS = Number(process.env.SOCIAL_AGENT_TICK_MS || 900000);
 const BUILD = 'oak-social-studio-v1.1-brand-editor';
+const APPROVAL_USER = process.env.SOCIAL_APPROVAL_USER || '';
+const APPROVAL_PASSWORD = process.env.SOCIAL_APPROVAL_PASSWORD || '';
+const TELEGRAM_BOT_TOKEN = process.env.SOCIAL_TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.SOCIAL_TELEGRAM_CHAT_ID || '';
+const SOCIAL_PUBLIC_URL = (process.env.SOCIAL_PUBLIC_URL || '').replace(/\/$/, '');
+const TELEGRAM_ENABLED = process.env.SOCIAL_TELEGRAM_ENABLED === 'true';
 
 const DIRS = {
   assets: path.join(STORAGE, 'assets'),
@@ -171,6 +177,27 @@ async function initDb() {
 
     INSERT INTO oak_social_agent_settings (id) VALUES (1)
     ON CONFLICT (id) DO NOTHING;
+
+    CREATE TABLE IF NOT EXISTS oak_social_approvals (
+      project_id UUID PRIMARY KEY REFERENCES oak_social_projects(id) ON DELETE CASCADE,
+      decision TEXT NOT NULL CHECK (decision IN ('approved','rejected','changes_requested')),
+      content_hash TEXT NOT NULL,
+      decided_by TEXT NOT NULL,
+      decided_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS oak_social_notification_outbox (
+      id BIGSERIAL PRIMARY KEY,
+      campaign_id UUID NOT NULL REFERENCES oak_social_campaigns(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL DEFAULT 'telegram',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','failed')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      sent_at TIMESTAMPTZ,
+      UNIQUE (campaign_id, channel)
+    );
 
     CREATE TABLE IF NOT EXISTS oak_social_audit (
       id BIGSERIAL PRIMARY KEY,
@@ -755,6 +782,118 @@ async function exportProject(project) {
   return outputName;
 }
 
+// Approval Core v1: Basic auth must only be exposed through HTTPS reverse proxy.
+function approvalAuth(req, res, next) {
+  if (!APPROVAL_USER || !APPROVAL_PASSWORD) return res.status(503).json({ error: 'Approval credentials are not configured' });
+  const header = req.get('authorization') || '';
+  const raw = header.startsWith('Basic ') ? Buffer.from(header.slice(6), 'base64').toString('utf8') : '';
+  const colon = raw.indexOf(':');
+  const user = colon >= 0 ? raw.slice(0, colon) : '';
+  const password = colon >= 0 ? raw.slice(colon + 1) : '';
+  const equal = (a,b) => {
+    const x = createHash('sha256').update(a).digest();
+    const y = createHash('sha256').update(b).digest();
+    return timingSafeEqual(x,y);
+  };
+  if (!equal(user, APPROVAL_USER) || !equal(password, APPROVAL_PASSWORD)) {
+    res.set('WWW-Authenticate', 'Basic realm="Oak Social Approval"');
+    return res.status(401).send('Authentication required');
+  }
+  res.set('Cache-Control', 'no-store');
+  next();
+}
+
+function approvalHash(row) {
+  const fields = ['platform','format','title','hook','caption','hashtags','language','aspect_ratio',
+    'duration_seconds','scenes','template_style','subtitle_mode','cover_asset_id','music_asset_id',
+    'music_volume','platform_preset','render_path','cover_path','export_path'];
+  return createHash('sha256').update(JSON.stringify(fields.map(k => row[k] ?? null))).digest('hex');
+}
+
+async function hasValidApproval(client, id) {
+  const result = await client.query(`SELECT p.*, a.decision, a.content_hash FROM oak_social_projects p
+    LEFT JOIN oak_social_approvals a ON a.project_id=p.id WHERE p.id=$1`, [id]);
+  const row = result.rows[0];
+  return Boolean(row && row.decision === 'approved' && row.content_hash === approvalHash(row));
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+app.get('/approval', approvalAuth, asyncRoute(async (_req,res) => {
+  const rows = (await pool.query(`SELECT p.*, a.decision, a.content_hash
+    FROM oak_social_projects p LEFT JOIN oak_social_approvals a ON a.project_id=p.id
+    ORDER BY p.created_at DESC LIMIT 100`)).rows;
+  const cards = rows.map(p => {
+    const valid = p.decision === 'approved' && p.content_hash === approvalHash(p);
+    const status = valid ? 'approved' : p.decision === 'approved' ? 'changed_since_approval' : p.decision || 'pending';
+    const btn = (decision,label) => `<form method="POST" action="/approval/${encodeURIComponent(p.id)}/${decision}"><button>${label}</button></form>`;
+    return `<article><small>${escapeHtml(p.platform)} · ${escapeHtml(p.language)} · ${escapeHtml(status)}</small><h2>${escapeHtml(p.title)}</h2><p>${escapeHtml(p.caption)}</p><p>${escapeHtml((p.hashtags||[]).join(' '))}</p><div class="actions">${btn('approve','Approve')}${btn('changes','Request changes')}${btn('reject','Reject')}</div></article>`;
+  }).join('');
+  res.type('html').send(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Oak Social Approval</title><style>body{font:16px system-ui;background:#101820;color:#f5f5f5;max-width:760px;margin:auto;padding:20px}article{background:#20303a;border-radius:14px;padding:18px;margin:14px 0;overflow-wrap:anywhere}small{color:#c0c9ce}p{white-space:pre-wrap}button{padding:12px;border-radius:9px;background:#d9b382;border:0;font-weight:bold;cursor:pointer}.actions{display:flex;flex-wrap:wrap;gap:8px}</style></head><body><h1>Oak Social · Approval Inbox</h1><p>Review drafts. Approval never publishes automatically.</p>${cards || '<p>No projects yet.</p>'}</body></html>`);
+}));
+
+// Browser form POSTs use Basic auth and Origin/Referer checks as CSRF defense.
+app.post('/approval/:id/:decision', approvalAuth, asyncRoute(async (req,res) => {
+  const origin = req.get('origin') || req.get('referer') || '';
+  const expected = SOCIAL_PUBLIC_URL;
+  if (!expected || !origin.startsWith(expected + '/') && origin !== expected) return res.status(403).send('Origin check failed');
+  const decisions = { approve:'approved', reject:'rejected', changes:'changes_requested' };
+  const decision = decisions[req.params.decision];
+  if (!decision) return res.status(400).send('Invalid decision');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query('SELECT * FROM oak_social_projects WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const project = result.rows[0];
+    if (!project) { await client.query('ROLLBACK'); return res.status(404).send('Not found'); }
+    const hash = approvalHash(project);
+    await client.query(`INSERT INTO oak_social_approvals(project_id,decision,content_hash,decided_by)
+      VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET
+      decision=EXCLUDED.decision, content_hash=EXCLUDED.content_hash,
+      decided_by=EXCLUDED.decided_by,decided_at=now()`, [project.id,decision,hash,APPROVAL_USER]);
+    await client.query(`UPDATE oak_social_projects SET status=$1,updated_at=now() WHERE id=$2`,
+      [decision === 'approved' ? 'approved' : decision, project.id]);
+    await client.query('COMMIT');
+    await audit('approval_decision', 'project', project.id, { decision, by: APPROVAL_USER });
+    res.redirect(303, '/approval');
+  } catch(e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}));
+
+async function telegramOutboxTick() {
+  if (!TELEGRAM_ENABLED || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !SOCIAL_PUBLIC_URL) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const {rows} = await client.query(`SELECT * FROM oak_social_notification_outbox
+      WHERE status IN ('pending','failed') AND next_attempt_at<=now() AND attempts<8
+      ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 3`);
+    for (const job of rows) {
+      const link = `${SOCIAL_PUBLIC_URL}/approval`;
+      const message = `Oak Social: a new campaign is ready for review. Open your secure approval inbox: ${link}`;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+        let response;
+        try { response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true}),signal:controller.signal
+        }); } finally { clearTimeout(timeout); }
+        if (!response.ok) throw new Error(`Telegram HTTP ${response.status}`);
+        await client.query(`UPDATE oak_social_notification_outbox SET status='sent',attempts=attempts+1,sent_at=now(),last_error=NULL WHERE id=$1`,[job.id]);
+      } catch(e) {
+        await client.query(`UPDATE oak_social_notification_outbox SET status='failed',attempts=attempts+1,
+          next_attempt_at=now()+interval '1 minute' * LEAST(60,POWER(2,LEAST(attempts,6))),last_error=$2 WHERE id=$1`,
+          [job.id,String(e.message).slice(0,200)]);
+      }
+    }
+    await client.query('COMMIT');
+  } catch(e) { await client.query('ROLLBACK'); console.error('Telegram outbox:',e.message); }
+  finally { client.release(); }
+}
+
 app.get('/health', asyncRoute(async (_req, res) => {
   let ollama = false;
   try {
@@ -908,8 +1047,10 @@ app.get('/projects/:id', asyncRoute(async (req, res) => {
   res.json(serializeProject(row));
 }));
 
-app.put('/projects/:id', asyncRoute(async (req, res) => {
+app.put('/projects/:id', approvalAuth, asyncRoute(async (req, res) => {
   const body = req.body || {};
+  if (body.status && !['draft','changes_requested','rejected'].includes(body.status))
+    return res.status(403).json({ error: 'Status transitions require approval workflow' });
   const row = (await pool.query(`
     UPDATE oak_social_projects SET
       platform=$1, format=$2, title=$3, hook=$4, caption=$5, hashtags=$6,
@@ -929,28 +1070,29 @@ app.put('/projects/:id', asyncRoute(async (req, res) => {
   res.json(serializeProject(row));
 }));
 
-app.post('/projects/:id/render/still', asyncRoute(async (req, res) => {
+app.post('/projects/:id/render/still', approvalAuth, asyncRoute(async (req, res) => {
   const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   const output = await renderStill(row);
   res.json({ ok: true, render_url: relativeUrl('renders', output), cover_url: relativeUrl('renders', output) });
 }));
 
-app.post('/projects/:id/render/video', asyncRoute(async (req, res) => {
+app.post('/projects/:id/render/video', approvalAuth, asyncRoute(async (req, res) => {
   const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   const output = await renderVideo(row);
   res.json({ ok: true, render_url: relativeUrl('renders', output) });
 }));
 
-app.post('/projects/:id/export', asyncRoute(async (req, res) => {
+app.post('/projects/:id/export', approvalAuth, asyncRoute(async (req, res) => {
   const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   const output = await exportProject(row);
   res.json({ ok: true, export_url: relativeUrl('exports', output) });
 }));
 
-app.post('/projects/:id/schedule', asyncRoute(async (req, res) => {
+app.post('/projects/:id/schedule', approvalAuth, asyncRoute(async (req, res) => {
+  if (!await hasValidApproval(pool, req.params.id)) return res.status(403).json({ error: 'Current content requires approval before scheduling' });
   const when = req.body?.scheduled_for ? new Date(req.body.scheduled_for) : null;
   if (!when || Number.isNaN(when.getTime())) return res.status(400).json({ error: 'Valid scheduled_for is required' });
   const row = (await pool.query(`UPDATE oak_social_projects SET scheduled_for=$1,status='scheduled',updated_at=now() WHERE id=$2 RETURNING *`, [when.toISOString(), req.params.id])).rows[0];
@@ -959,7 +1101,8 @@ app.post('/projects/:id/schedule', asyncRoute(async (req, res) => {
   res.json(serializeProject(row));
 }));
 
-app.post('/projects/:id/mark-published', asyncRoute(async (req, res) => {
+app.post('/projects/:id/mark-published', approvalAuth, asyncRoute(async (req, res) => {
+  if (!await hasValidApproval(pool, req.params.id)) return res.status(403).json({ error: 'Current content requires approval before marking published' });
   const row = (await pool.query(`UPDATE oak_social_projects SET status='published',updated_at=now() WHERE id=$1 RETURNING *`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   await audit('project_marked_published', 'project', req.params.id, {});
@@ -1038,6 +1181,8 @@ async function runAgentDraft(reason = 'manual') {
     });
     await pool.query(`UPDATE oak_social_campaigns SET status='agent_draft' WHERE id=$1`, [saved.campaign_id]);
     await pool.query(`UPDATE oak_social_agent_settings SET last_run_at=now() WHERE id=1`);
+    await pool.query(`INSERT INTO oak_social_notification_outbox(campaign_id) VALUES($1)
+      ON CONFLICT(campaign_id,channel) DO NOTHING`, [saved.campaign_id]);
     await audit('daily_agent_draft_created', 'campaign', saved.campaign_id, { reason });
     return saved;
   } finally {
@@ -1065,7 +1210,7 @@ function zonedParts(date, timeZone) {
 
 async function agentTick() {
   try {
-    await pool.query(`UPDATE oak_social_projects SET status='ready_to_publish',updated_at=now() WHERE status='scheduled' AND scheduled_for <= now()`);
+    // Approval Core v1: automatic ready-to-publish transitions are disabled until a version-safe publisher exists.
     const settings = (await pool.query('SELECT * FROM oak_social_agent_settings WHERE id=1')).rows[0];
     if (!settings?.enabled) return;
     const now = new Date();
@@ -1091,4 +1236,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Oak Social API listening on ${PORT} (${BUILD})`);
   setTimeout(agentTick, 5000);
   setInterval(agentTick, Math.max(60000, AGENT_TICK_MS));
+  setTimeout(telegramOutboxTick, 10000);
+  setInterval(telegramOutboxTick, 60000);
 });
