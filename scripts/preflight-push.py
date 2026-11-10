@@ -2,7 +2,7 @@
 """Block an approved development-branch push unless Git ancestry and fresh live observations pass."""
 import argparse,importlib.util,json,pathlib,subprocess,sys
 class Blocked(RuntimeError):pass
-ALLOWED_BRANCHES={'staging','feature/company-funds'}
+ALLOWED_BRANCHES={'staging','feature/company-funds','feature/oak-social-openai'}
 EXPECTED={'https://github.com/sandipniyogi/oak-expense-v1','git@github.com:sandipniyogi/oak-expense-v1','ssh://git@github.com/sandipniyogi/oak-expense-v1'}
 def git(root,*args):
  try:p=subprocess.run(['git',*args],cwd=root,text=True,capture_output=True,timeout=120)
