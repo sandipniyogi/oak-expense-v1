@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Oak Social V3 tests
+        run: node --test services/social-api/test/*.test.js
       - name: Expense AI review tests
         run: node --test services/oak-ai/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/expenseReviewEvidence.test.mjs apps/web/test/manualScreenshotReview.test.mjs apps/web/test/batchReview.test.mjs apps/api/test/payer-category-report.test.cjs
       - name: Expense automation tests
