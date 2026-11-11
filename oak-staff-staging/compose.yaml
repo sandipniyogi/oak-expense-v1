@@ -1,0 +1,13 @@
+services:
+  staff:
+    build: .
+    ports:
+      - "127.0.0.1:3111:3111"
+    environment:
+      OAK_STAFF_DB: /data/staff.sqlite
+      OAK_STAFF_ORIGIN: http://localhost:3111
+      OAK_STAFF_ATTENDANCE_MODE: rehearsal
+    volumes:
+      - staff-staging:/data
+volumes:
+  staff-staging:
