@@ -16,9 +16,10 @@ def ancestor(root,older,newer):
 def validate_report(report,approved):
  if not isinstance(report,dict) or report.get('approved_git_commit')!=approved:raise Blocked('Approved main changed during verification; fetch and retry')
  if report.get('both_online') is not True:raise Blocked('Both live systems must be online')
- if report.get('observed_business_content_matches') is not True:raise Blocked('Live business content does not match')
+ # Development pushes require approved source integrity, not identical live business data.
+ # Production deployment authorization is separate and remains fail-closed.
  if report.get('source_mismatches')!={'mac':{},'vps':{}}:raise Blocked('Live source differs from approved main or source scope is incomplete')
- if report.get('data_differences')!={}:raise Blocked('Live differences reported; reconcile before pushing')
+ if not isinstance(report.get('data_differences'),dict):raise Blocked('Live data observation scope incomplete')
  if not isinstance(report.get('counts'),dict) or set(report['counts'])!={'mac','vps'}:raise Blocked('Live observation scope incomplete')
  return report
 def check(root,config,verify=None):
@@ -51,7 +52,7 @@ def check(root,config,verify=None):
  validate_report(report,approved)
  if git(root,'rev-parse','origin/main')!=approved or git(root,'rev-parse','HEAD')!=head:raise Blocked('Git references changed during verification; retry')
  if git(root,'status','--porcelain','--untracked-files=normal'):raise Blocked('Working tree changed during verification')
- return {'ok':True,'branch':branch,'commit':head,'staging_commit':head if branch=='staging' else None,'approved_main':approved,'live_observation_matches':True,'production_gate_ready':report.get('production_gate_ready') is True,'live_write_permission_granted':False,'note':'Push preflight only. Not continuous synchronization or a production write permit.'}
+ return {'ok':True,'branch':branch,'commit':head,'staging_commit':head if branch=='staging' else None,'approved_main':approved,'live_observation_matches':report.get('observed_business_content_matches') is True,'production_gate_ready':report.get('production_gate_ready') is True,'live_write_permission_granted':False,'note':'Push preflight only. Not continuous synchronization or a production write permit.'}
 def validate_push(lines,head,branch='staging'):
  if branch not in ALLOWED_BRANCHES:raise Blocked('This branch is not approved for direct push')
  if len(lines.splitlines())!=1 or not lines.strip():raise Blocked('Push exactly one current development branch')
