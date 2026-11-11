@@ -349,7 +349,31 @@ async function makeThumbnail(assetPath, mediaType, storedName) {
   return null;
 }
 
-async function fetchOpenAIJson(system, user, _schema) {
+function makeStrictSchema(schema) {
+  const copy = JSON.parse(JSON.stringify(schema));
+
+  function prepare(node) {
+    if (!node || typeof node !== 'object') return;
+
+    delete node.minimum;
+    delete node.maximum;
+
+    if (node.type === 'object') {
+      node.additionalProperties = false;
+      node.required = Object.keys(node.properties || {});
+      for (const child of Object.values(node.properties || {})) {
+        prepare(child);
+      }
+    }
+
+    if (node.items) prepare(node.items);
+  }
+
+  prepare(copy);
+  return copy;
+}
+
+async function fetchOpenAIJson(system, user, _schema, imageContent = []) {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not configured');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
@@ -363,14 +387,39 @@ async function fetchOpenAIJson(system, user, _schema) {
       body: JSON.stringify({
         model: OPENAI_MODEL,
         instructions: system + '\nReturn only a valid JSON object with campaign_title, summary and posts. Do not use markdown fences.',
-        input: user,
-        text: { format: { type: 'json_object' } },
+        input: imageContent.length
+          ? [{
+              role: 'user',
+              content: [
+                { type: 'input_text',
+                  text: 'Return the campaign as valid JSON.\n\n' + user },
+                ...imageContent
+              ]
+            }]
+          : 'Return the campaign as valid JSON.\n\n' + user,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'oak_social_campaign',
+            strict: true,
+            schema: makeStrictSchema(_schema)
+          }
+        },
         store: false
       }),
       signal: controller.signal
     });
     if (!response.ok) {
       // Avoid logging provider response bodies, which can contain sensitive information.
+      const errorBody = await response.json().catch(() => ({}));
+      const detail = errorBody?.error || {};
+      console.error('OpenAI rejection:', {
+        status: response.status,
+        type: detail.type || null,
+        code: detail.code || null,
+        param: detail.param || null,
+        message: detail.message || null
+      });
       throw new Error(`OpenAI returned HTTP ${response.status}`);
     }
     const result = await response.json();
@@ -393,11 +442,11 @@ async function fetchOpenAIJson(system, user, _schema) {
   }
 }
 
-async function fetchCampaignJson(system, user, schema) {
+async function fetchCampaignJson(system, user, schema, imageContent = []) {
   if (AI_PROVIDER === 'ollama') return fetchOllamaJson(system, user, schema);
   if (AI_PROVIDER !== 'openai') throw new Error('Unsupported SOCIAL_AI_PROVIDER');
   // Fail closed: never silently switch providers or spend money unexpectedly.
-  return fetchOpenAIJson(system, user, schema);
+  return fetchOpenAIJson(system, user, schema, imageContent);
 }
 
 async function fetchOllamaJson(system, user, schema, timeoutMs = 180000) {
@@ -468,17 +517,149 @@ const campaignSchema = {
   }
 };
 
+async function buildVisionContentForSelectedAssets(assets) {
+  const content = [];
+
+  for (const asset of assets
+    .filter(a => ['image', 'video'].includes(a.media_type))
+    .slice(0, 4)) {
+
+    try {
+      const name = asset.thumbnail_name || asset.stored_name;
+      if (!name) continue;
+
+      const directory = asset.thumbnail_name ? DIRS.thumbs : DIRS.assets;
+      const file = path.join(directory, path.basename(name));
+
+      const jpeg = await sharp(file)
+        .rotate()
+        .resize(768, 768, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: 75 })
+        .toBuffer();
+
+      content.push({
+        type: 'input_text',
+        text: `Analyze the image for Oak asset ${asset.id}. Describe only what is visible. Use this asset ID when matching the image to a campaign scene.`
+      });
+
+      content.push({
+        type: 'input_image',
+        image_url: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
+        detail: 'low'
+      });
+    } catch (error) {
+      console.warn('Vision preview unavailable:', asset.id);
+    }
+  }
+
+  return content;
+}
+
+
+async function analyzeOakAsset(asset) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OpenAI key required for visual analysis');
+  }
+
+  const filename = asset.thumbnail_name || asset.stored_name;
+  if (!filename) throw new Error('Selected media has no stored file');
+
+  const directory = asset.thumbnail_name ? DIRS.thumbs : DIRS.assets;
+  const file = path.join(directory, path.basename(filename));
+
+  const jpeg = await sharp(file)
+    .rotate()
+    .resize(768, 768, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+    .jpeg({ quality: 78 })
+    .toBuffer();
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      store: false,
+      input: [{
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: `Return only JSON with keys category and description.
+Category must be food, drink, interior, event, or other.
+Describe what is actually visible in this Oak Lounge image.
+Do not invent ingredients, product names, events, or prices.
+A food photograph must not be classified as a cocktail
+unless a cocktail is clearly its main subject.`
+          },
+          {
+            type: 'input_image',
+            image_url: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
+            detail: 'low'
+          }
+        ]
+      }],
+      text: { format: { type: 'json_object' } }
+    }),
+    signal: AbortSignal.timeout(45000)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Image analysis failed: HTTP ${response.status}`);
+  }
+
+  const result = await response.json();
+  const output = (result.output || [])
+    .flatMap(item => item.content || [])
+    .filter(item => item.type === 'output_text')
+    .map(item => item.text)
+    .join('');
+
+  const analysis = JSON.parse(output);
+  const categories = ['food', 'drink', 'interior', 'event', 'other'];
+
+  if (!categories.includes(analysis.category) ||
+      typeof analysis.description !== 'string' ||
+      !analysis.description.trim()) {
+    throw new Error('Invalid visual analysis response');
+  }
+
+  return {
+    id: asset.id,
+    category: analysis.category,
+    description: analysis.description.slice(0, 1000)
+  };
+}
+
 async function buildCampaignProposal({ brief, objective = '', platforms = [], languages = [], assetIds = [] }) {
   const brand = (await pool.query('SELECT * FROM oak_social_brand WHERE id=1')).rows[0];
   let assets = [];
   if (assetIds.length) {
-    const q = await pool.query(`SELECT id, original_name, media_type, tags, notes FROM oak_social_assets WHERE id = ANY($1::uuid[]) AND is_active=true`, [assetIds]);
+    const q = await pool.query(`SELECT id, original_name, stored_name, thumbnail_name, media_type, tags, notes FROM oak_social_assets WHERE id = ANY($1::uuid[]) AND is_active=true`, [assetIds]);
     assets = q.rows;
   }
   const allowedIds = new Set(assets.map(a => a.id));
   const assetText = assets.length
     ? assets.map(a => `- ${a.id} | ${a.media_type} | ${a.original_name} | tags: ${(a.tags || []).join(', ')} | notes: ${a.notes || ''}`).join('\n')
     : '- No assets selected yet. Use an empty asset_id in scenes and write clear scene notes so the user can attach media later.';
+
+  const visualAnalysis = [];
+  for (const asset of assets.filter(a =>
+    ['image', 'video'].includes(a.media_type)).slice(0, 4)) {
+    visualAnalysis.push(await analyzeOakAsset(asset));
+  }
+
+  const visualDescriptions = visualAnalysis.map(a =>
+    `Asset ${a.id}: category=${a.category}; visible=${a.description}`
+  ).join('\n');
 
   const system = `You are Oak Social Agent, the bilingual social-media creative planner for ${brand.brand_name}.\n` +
     `Brand tone: ${brand.tone}.\nBrand rules: ${brand.brand_rules}.\n` +
@@ -489,7 +670,18 @@ async function buildCampaignProposal({ brief, objective = '', platforms = [], la
 
   const user = `Campaign brief:\n${brief}\n\nObjective:\n${objective || 'Build awareness and visits to Oak Lounge.'}\n\nRequested platforms: ${platforms.join(', ') || 'Instagram, Facebook, Redbook, WeChat Channels, TikTok'}\nRequested languages: ${languages.join(', ') || (brand.languages || []).join(', ')}\n\nAvailable assets:\n${assetText}\n\nCreate one strong draft for each requested platform. Keep short-video scene plans editable and practical. For still/carousel posts, scenes represent image slots.`;
 
-  const proposal = await fetchCampaignJson(system, user, campaignSchema);
+  const visionContent = AI_PROVIDER === 'openai'
+    ? await buildVisionContentForSelectedAssets(assets)
+    : [];
+  const verifiedVisualBrief = user + '\n\nVERIFIED IMAGE ANALYSIS:\n' +
+    (visualDescriptions || 'No selected visual assets.') +
+    '\nMatch every headline, caption, hook and scene to the actual image. ' +
+    'Never describe a food image as a cocktail image. ' +
+    'Use only matching asset IDs.';
+
+  const proposal = await fetchCampaignJson(
+    system, verifiedVisualBrief, campaignSchema, visionContent
+  );
   proposal.posts = (proposal.posts || []).map(post => ({
     ...post,
     platform: String(post.platform || '').toLowerCase().replace(/\s+/g, '_'),
@@ -696,7 +888,7 @@ export async function commitGeneratedArtifact(project, actorId, field, outputNam
        last_edited_by_staff_id=$2, updated_at=now()
      WHERE id=$3 AND updated_at IS NOT DISTINCT FROM $4
        AND status NOT IN ('scheduled', 'published') RETURNING id`,
-    [outputName, actorId, project.id, project.updated_at]
+    [outputName, actorId, project.id, project.updated_at_exact]
   );
   if (result.rowCount !== 1) throw new Error('Project changed while generating artifact; retry from the latest draft');
 }
@@ -1121,6 +1313,116 @@ app.post('/assets/upload', upload.array('files', 30), asyncRoute(async (req, res
   res.status(201).json({ assets: created });
 }));
 
+
+// Authorized, read-only source scan. Files are copied into Oak Social storage.
+// The source directory must be explicitly mounted by the deployment.
+app.post('/assets/import-local', asyncRoute(async (req, res) => {
+  const root = process.env.SOCIAL_MEDIA_IMPORT_ROOT;
+  if (!root) {
+    return res.status(503).json({ error: 'Media import folder not configured' });
+  }
+
+  const { discoverMedia } = await import('./mediaDiscovery.js');
+  const sourceRoot = await fsp.realpath(root);
+  const discovered = await discoverMedia(sourceRoot, {
+    minimumAgeMs: 120000
+  });
+
+  const imported = [];
+  let skipped = 0;
+
+  for (const item of discovered.slice(0, 30)) {
+    if (item.size > 300 * 1024 * 1024) {
+      skipped++;
+      continue;
+    }
+
+    const ext = path.extname(item.path).toLowerCase();
+    const mime = ({
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.mp4': 'video/mp4',
+      '.mov': 'video/quicktime'
+    })[ext];
+    if (!mime) continue;
+
+    // Check checksum rather than only filename.
+    const duplicate = await pool.query(
+      'SELECT id FROM oak_social_assets WHERE stored_name LIKE $1 LIMIT 1',
+      [`import-${item.checksum}.%`]
+    );
+    if (duplicate.rowCount) {
+      skipped++;
+      continue;
+    }
+
+    const source = path.join(sourceRoot, item.path);
+    const name = `import-${item.checksum}${ext}`;
+    const destination = path.join(DIRS.assets, name);
+
+    try {
+      await fsp.copyFile(source, destination, fs.constants.COPYFILE_EXCL);
+    } catch (err) {
+      if (err.code === 'EEXIST') {
+        skipped++;
+        continue;
+      }
+      throw err;
+    }
+
+    const type = item.type;
+    let width = null, height = null, duration = null;
+
+    try {
+      if (type === 'image') {
+        const meta = await sharp(destination).metadata();
+        width = meta.width || null;
+        height = meta.height || null;
+      } else {
+        const meta = await probeMedia(destination);
+        width = meta.width;
+        height = meta.height;
+        duration = meta.duration;
+      }
+
+      const thumb = await makeThumbnail(destination, type, name);
+      const id = randomUUID();
+
+      const result = await pool.query(`
+        INSERT INTO oak_social_assets
+        (id, original_name, stored_name, thumbnail_name,
+         mime_type, media_type, size_bytes, width, height,
+         duration_seconds, tags, notes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        ON CONFLICT (stored_name) DO NOTHING RETURNING *
+      `, [
+        id, path.basename(item.path), name, thumb,
+        mime, type, item.size, width, height, duration,
+        ['media-drive'], `Imported from: ${item.path}`
+      ]);
+
+      if (result.rowCount) imported.push(serializeAsset(result.rows[0]));
+      else skipped++;
+    } catch (err) {
+      await fsp.rm(destination, { force: true }).catch(() => {});
+      throw err;
+    }
+  }
+
+  await audit('media_drive_import', 'asset_batch', null, {
+    imported: imported.length, skipped
+  });
+
+  res.json({
+    imported: imported.length,
+    skipped,
+    remaining_scan: Math.max(0, discovered.length - 30),
+    assets: imported
+  });
+}));
+
 app.get('/assets', asyncRoute(async (req, res) => {
   const type = req.query.media_type ? String(req.query.media_type) : null;
   const q = String(req.query.q || '').trim();
@@ -1219,21 +1521,21 @@ app.put('/projects/:id', asyncRoute(async (req, res) => {
 }));
 
 app.post('/projects/:id/render/still', asyncRoute(async (req, res) => {
-  const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
+  const row = (await pool.query(`SELECT *, updated_at::text AS updated_at_exact FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   const output = await renderStill(row, req.staff.id);
   res.json({ ok: true, render_url: relativeUrl('renders', output), cover_url: relativeUrl('renders', output) });
 }));
 
 app.post('/projects/:id/render/video', asyncRoute(async (req, res) => {
-  const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
+  const row = (await pool.query(`SELECT *, updated_at::text AS updated_at_exact FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   const output = await renderVideo(row, req.staff.id);
   res.json({ ok: true, render_url: relativeUrl('renders', output) });
 }));
 
 app.post('/projects/:id/export', asyncRoute(async (req, res) => {
-  const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
+  const row = (await pool.query(`SELECT *, updated_at::text AS updated_at_exact FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   const output = await exportProject(row, req.staff.id);
   res.json({ ok: true, export_url: relativeUrl('exports', output) });

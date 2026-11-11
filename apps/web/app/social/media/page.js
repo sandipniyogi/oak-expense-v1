@@ -50,6 +50,22 @@ export default function SocialMediaPage() {
     finally { setBusy(false); }
   };
 
+  const importMedia = async () => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const result = await socialFetch('/assets/import-local', {
+        method: 'POST',
+        body: '{}'
+      });
+      setMessage(`Imported ${result.imported} new file(s); skipped ${result.skipped}.`);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const archive = async (id) => {
     if (!window.confirm('Archive this media item? The original file stays on disk but it will no longer be offered to the Social Agent.')) return;
     try {
@@ -69,6 +85,12 @@ export default function SocialMediaPage() {
 
         <section className={styles.panel}>
           <h2 className={styles.h3}>Upload Oak photos and videos</h2>
+          <div className={styles.actions}>
+            <button type="button" className={styles.buttonDark}
+              disabled={busy} onClick={importMedia}>
+              {busy ? 'Importing...' : 'Import New Media'}
+            </button>
+          </div>
           <form onSubmit={upload} className={styles.formGrid}>
             <div className={styles.fieldFull}>
               <label className={styles.label}>Files</label>
