@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import IndividualSettlement from './IndividualSettlement';
 import BatchExpenses from './BatchExpenses';
 import CombinedExpenses from './CombinedExpenses';
+import PaymentScreenshotPreview from './PaymentScreenshotPreview';
 import ExpenseReview from './ExpenseReview';
 import SpendingReview from './SpendingReview';
 import PaidByCategorySummary from './PaidByCategorySummary';
@@ -155,7 +156,17 @@ export default function Home() {
       if(request!==savedRequest.current)return;
       const last=Math.max(1,Math.ceil(e.total/size));
       if(e.page>last)return await load(last,size);
-      setMeta(m);setExpenses(e.rows);setSavedTotal(e.total);setSavedPage(e.page);setSavedSize(size);
+      if (!Array.isArray(m.users) || !Array.isArray(m.categories)) {
+         throw new Error('Staging API returned invalid user/category metadata.');
+       }
+       if (!Array.isArray(e.rows) || !Number.isFinite(Number(e.total))) {
+         throw new Error('Staging API returned an unexpected expenses response. Check API version.');
+       }
+       setMeta({...m,users:m.users,categories:m.categories});
+       setExpenses(e.rows);
+       setSavedTotal(Number(e.total));
+       setSavedPage(Number(e.page)||1);
+       setSavedSize(size);
       if(!form.user_id && m.users[0])setForm(f=>({...f,user_id:m.users[0].id}));
       return e.rows;
     }catch(error){if(request===savedRequest.current)setSavedError(error.message);}
@@ -527,6 +538,7 @@ export default function Home() {
           </span>
           {file&&<span className="file-ready">✓ Image selected successfully</span>}
         </label>
+        <PaymentScreenshotPreview file={file}/>
         {captureMode==='ocr'
           ? <button disabled={!file||busy} onClick={runOcr}>{busy?'Working…':'Read screenshot'}</button>
           : <p className="message">Enter the amount and details manually on the right. The screenshot uploads automatically when you save.</p>}
@@ -541,8 +553,8 @@ export default function Home() {
           <label>Merchant<input value={form.merchant} onChange={e=>setForm({...form,merchant:e.target.value})} placeholder="Merchant name"/></label>
           <label>Date<input type="date" value={form.expense_date} onChange={e=>setForm({...form,expense_date:e.target.value})}/></label>
           <label>Payment<select value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}><option value="">Unknown</option><option value="wechat">WeChat</option><option value="alipay">Alipay</option><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other app</option></select></label>
-          <label>Paid by<select value={form.user_id} onChange={e=>setForm({...form,user_id:e.target.value})}>{meta.users.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-          <label>Category<select value={form.category_id} onChange={e=>setForm({...form,category_id:e.target.value})}><option value="">Select</option>{meta.categories.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <label>Paid by<select value={form.user_id} onChange={e=>setForm({...form,user_id:e.target.value})}>{(meta.users||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <label>Category<select value={form.category_id} onChange={e=>setForm({...form,category_id:e.target.value})}><option value="">Select</option>{(meta.categories||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
           {captureMode==='manual'
             ? <label className="wide">What was this expense for? <span>(required)</span><textarea rows="3" maxLength="2000" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="For example: lemons and mint for cocktails"/></label>
             : <label className="wide">Description<input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Optional note"/></label>}
@@ -574,8 +586,8 @@ export default function Home() {
           <button disabled={reportBusy} onClick={()=>applyQuickRange('30')}>Last 30 days</button>
           <button disabled={reportBusy} onClick={()=>applyQuickRange('all')}>All time</button>
         </div>
-        <label>Paid by<select value={reportFilters.user_id} disabled={reportBusy} onChange={e=>{const next={...reportFilters,user_id:e.target.value};setReportFilters(next);generateReport(next);}} style={{display:'block',marginTop:5,border:'1px solid #d6d0c5',borderRadius:10,padding:10,background:'#fff',fontSize:16,maxWidth:'100%'}}><option value="">All people</option>{(meta.report_users||meta.users).map(person=><option key={person.id} value={person.id}>{person.name}{person.active===false?' (inactive)':''}</option>)}</select></label>
-        <label>Expense category<select value={reportFilters.category_id} disabled={reportBusy} onChange={e=>{const next={...reportFilters,category_id:e.target.value};setReportFilters(next);generateReport(next);}}><option value="">All categories</option><option value="uncategorized">Uncategorized</option>{meta.categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+        <label>Paid by<select value={reportFilters.user_id} disabled={reportBusy} onChange={e=>{const next={...reportFilters,user_id:e.target.value};setReportFilters(next);generateReport(next);}} style={{display:'block',marginTop:5,border:'1px solid #d6d0c5',borderRadius:10,padding:10,background:'#fff',fontSize:16,maxWidth:'100%'}}><option value="">All people</option>{(meta.report_users||meta.users||[]).map(person=><option key={person.id} value={person.id}>{person.name}{person.active===false?' (inactive)':''}</option>)}</select></label>
+        <label>Expense category<select value={reportFilters.category_id} disabled={reportBusy} onChange={e=>{const next={...reportFilters,category_id:e.target.value};setReportFilters(next);generateReport(next);}}><option value="">All categories</option><option value="uncategorized">Uncategorized</option>{(meta.categories||[]).map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         <label>Exact amount (CNY)<input type="text" inputMode="decimal" placeholder="e.g. 250.00" value={reportFilters.amount} disabled={reportBusy} onChange={e=>setReportFilters({...reportFilters,amount:e.target.value})} onKeyDown={e=>{if(e.key==='Enter') generateReport(reportFilters);}}/><small>Leave blank for all amounts. Search matches the saved expense total.</small></label>
         <button disabled={reportBusy} onClick={()=>{const next={...reportFilters,user_id:'',category_id:'',amount:''};setReportFilters(next);generateReport(next);}}>Clear person / category / amount</button>
         <label>Start date<input type="date" value={reportFilters.from} onChange={e=>setReportFilters({...reportFilters,from:e.target.value})}/></label>
@@ -669,7 +681,7 @@ export default function Home() {
       </nav>
       {editingId&&<p className="message">Save or close the editor before changing pages.</p>}
       <div className="tablewrap"><table className="saved-expenses-table"><thead><tr><th>Date</th><th>Paid by</th><th>Merchant</th><th>Category</th><th>Method</th><th>Amount</th><th>Reimburse</th><th>Screenshot</th><th>Actions</th></tr></thead><tbody>
-        {expenses.map(e=><Fragment key={e.id}>
+        {(expenses||[]).map(e=><Fragment key={e.id}>
           <tr className={editingId===e.id?'selected-expense-row':''}>
             <td>{expenseDate(e)||'—'}</td><td>{e.paid_by||'—'}</td><td>{e.merchant||'—'}</td><td>{e.category||'—'}</td><td>{paymentLabel(e.payment_method)}</td><td className="money">{money(e.amount)}</td><td>{e.reimbursement_required?(e.reimbursement_status||'Pending'):'—'}</td>
             <td>{e.combined_count>0 ? <div className="screenshot-actions">{Array.from({length:e.combined_count},(_,i)=><a key={i} className="text-link" href={`${API}/expenses/${e.id}/combined-screenshot/${i}`} target="_blank" rel="noreferrer">View {i+1}</a>)}</div> : e.image_path?<a className="text-link" href={`${API}/expenses/${e.id}/screenshot`} target="_blank" rel="noreferrer">View</a>:<span className="muted">None</span>}</td>
@@ -683,8 +695,8 @@ export default function Home() {
                 <label>Merchant<input value={editForm.merchant} onChange={ev=>setEditForm({...editForm,merchant:ev.target.value})}/></label>
                 <label>Date<input type="date" value={editForm.expense_date} onChange={ev=>setEditForm({...editForm,expense_date:ev.target.value})}/></label>
                 <label>Payment<select value={editForm.payment_method} onChange={ev=>setEditForm({...editForm,payment_method:ev.target.value})}><option value="">Unknown</option><option value="wechat">WeChat</option><option value="alipay">Alipay</option><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other app</option></select></label>
-                <label>Paid by<select value={editForm.user_id} onChange={ev=>setEditForm({...editForm,user_id:ev.target.value})}>{meta.users.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-                <label>Category<select value={editForm.category_id} onChange={ev=>setEditForm({...editForm,category_id:ev.target.value})}><option value="">Select</option>{meta.categories.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+                <label>Paid by<select value={editForm.user_id} onChange={ev=>setEditForm({...editForm,user_id:ev.target.value})}>{(meta.users||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+                <label>Category<select value={editForm.category_id} onChange={ev=>setEditForm({...editForm,category_id:ev.target.value})}><option value="">Select</option>{(meta.categories||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
                 <label className="wide">Description<input value={editForm.description} onChange={ev=>setEditForm({...editForm,description:ev.target.value})}/></label>
                 <label className="check wide"><input type="checkbox" checked={editForm.reimbursement_required} onChange={ev=>setEditForm({...editForm,reimbursement_required:ev.target.checked})}/> Personal money — reimbursement required</label>
               </div>

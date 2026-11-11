@@ -35,3 +35,20 @@ test('non-JSON 413 gives a useful retryable message',async()=>{
 test('malformed attachment reply prevents final submission',async()=>{
  let calls=0;await assert.rejects(saveCombined({api:'/api',parts:[part('a',{amounts:['1','2']})],form,request:async()=>{calls++;return response({});}}),/did not return an attachment/);assert.equal(calls,1);
 });
+
+test('Excel payment save submits edited amounts and row references without an image upload',async()=>{
+ const workbook={filename:'payments.xlsx',sheet:'October',rows:[
+  {number:3,date:'23RD OCT',description:'Payment',cents:-7050},null
+ ]};
+ const payments={workbook,amounts:['70.25','2.00'],expense_date:'2026-10-23'};
+ const calls=[];
+ await saveCombined({api:'/api',parts:[payments],form,request:async(url,options)=>{
+  calls.push({url,payload:JSON.parse(options.body)});
+  return response({},201);
+ }});
+ assert.deepEqual(calls.map(call=>call.url),['/api/expenses/combined']);
+ assert.deepEqual(calls[0].payload.parts[0],{
+  workbook,amounts:['70.25','2.00'],expense_date:'2026-10-23'
+ });
+ assert.match(combinedValidation([payments,part('a')],form),/own group/);
+});

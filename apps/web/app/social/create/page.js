@@ -15,6 +15,7 @@ export default function SocialCreatePage() {
   const router = useRouter();
   const [assets, setAssets] = useState([]);
   const [selected, setSelected] = useState([]);
+  const [campaignMode, setCampaignMode] = useState('auto');
   const [brief, setBrief] = useState('Create a premium Oak Lounge campaign using our real venue media.');
   const [objective, setObjective] = useState('Increase visits and engagement.');
   const [platforms, setPlatforms] = useState(['instagram', 'redbook', 'wechat_channels', 'tiktok']);
@@ -31,12 +32,28 @@ export default function SocialCreatePage() {
   const toggle = (value, list, setList) => setList(list.includes(value) ? list.filter(x => x !== value) : [...list, value]);
   const toggleAsset = id => setSelected(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]);
 
+  const autoBrief = [
+    'Create an original, premium social media campaign for The Oak Lounge, Shanghai.',
+    'Base the campaign on what is actually visible in the selected real photos.',
+    'First identify each image subject. Match every headline, hook, caption',
+    'and scene to its corresponding photograph.',
+    'Do not call a food dish a cocktail or describe anything not visible.',
+    'Choose a compelling creative angle based on the selected media.',
+    'Vary the storytelling, wording, formats and creative approach.',
+    'Avoid repetitive campaigns and generic promotional slogans.',
+    'Never invent menu ingredients, discounts, prices, events or offers.',
+    'Write platform-appropriate English and Simplified Chinese content.',
+    'Prepare editable drafts for human review, not automatic publishing.'
+  ].join(' ');
+
+  const effectiveBrief = campaignMode === 'auto' ? autoBrief : brief;
+
   const generate = async () => {
     setBusy(true); setError(''); setProposal(null);
     try {
       const data = await socialFetch('/ai/plan', {
         method: 'POST',
-        body: JSON.stringify({ brief, objective, platforms, languages, asset_ids: selected })
+        body: JSON.stringify({ brief: effectiveBrief, objective, platforms, languages, asset_ids: selected })
       });
       setProposal(data.proposal);
     } catch (e) { setError(e.message); }
@@ -53,7 +70,7 @@ export default function SocialCreatePage() {
     try {
       const data = await socialFetch('/campaigns', {
         method: 'POST',
-        body: JSON.stringify({ brief, objective, platforms, languages, proposal, source: 'manual' })
+        body: JSON.stringify({ brief: effectiveBrief, objective, platforms, languages, proposal, source: 'manual' })
       });
       if (data.projects?.length) router.push(`/social/projects/${data.projects[0].id}`);
       else router.push('/social');
@@ -73,9 +90,32 @@ export default function SocialCreatePage() {
         <section className={styles.panel}>
           <div className={styles.formGrid}>
             <div className={styles.fieldFull}>
+              <label className={styles.label}>Campaign creation mode</label>
+              <div className={styles.checkRow}>
+                <label className={styles.checkChip}>
+                  <input type="radio" name="campaignMode"
+                    checked={campaignMode === 'auto'}
+                    onChange={() => setCampaignMode('auto')} />
+                  Auto Campaign
+                </label>
+                <label className={styles.checkChip}>
+                  <input type="radio" name="campaignMode"
+                    checked={campaignMode === 'custom'}
+                    onChange={() => setCampaignMode('custom')} />
+                  Custom Campaign
+                </label>
+              </div>
+              {campaignMode === 'auto' &&
+                <p className={styles.muted}>
+                  Select real Oak Lounge photos below. AI will analyze
+                  the selected images and create a matching campaign.
+                  No written brief is needed.
+                </p>}
+            </div>
+            {campaignMode === 'custom' && <div className={styles.fieldFull}>
               <label className={styles.label}>Campaign brief</label>
               <textarea className={styles.textarea} value={brief} onChange={e => setBrief(e.target.value)} placeholder="Example: Promote Friday night cocktails, atmosphere and live music. International audience in China. Do not invent any discounts." />
-            </div>
+            </div>}
             <div className={styles.fieldFull}>
               <label className={styles.label}>Objective</label>
               <input className={styles.input} value={objective} onChange={e => setObjective(e.target.value)} />
@@ -111,7 +151,7 @@ export default function SocialCreatePage() {
           </div>
           {!assets.length && <div className={styles.notice}>No media uploaded yet. You can still generate copy and scene ideas, or upload photos/videos first from Media.</div>}
           <div className={styles.actions}>
-            <button className={styles.buttonDark} onClick={generate} disabled={busy || !brief.trim() || !platforms.length}>{busy ? <><span className={styles.spinner} /> Qwen is planning…</> : 'Generate campaign proposal'}</button>
+            <button className={styles.buttonDark} onClick={generate} disabled={busy || !effectiveBrief.trim() || !platforms.length || (campaignMode === 'auto' && !selected.length)}>{busy ? <><span className={styles.spinner} /> Qwen is planning…</> : campaignMode === 'auto' ? 'Generate automatically from photos' : 'Generate campaign proposal'}</button>
           </div>
           {error && <div className={styles.error} style={{ marginTop: 14 }}>{error}</div>}
         </section>

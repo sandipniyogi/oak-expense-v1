@@ -5,19 +5,32 @@ import pg from 'pg';
 const { Pool } = pg;
 import sharp from 'sharp';
 import archiver from 'archiver';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash, createHmac, timingSafeEqual } from 'crypto';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
+import { createStaffRouter } from './staffRoutes.js';
+import { staffSession, staffPermission, exactOrigin } from './staffMiddleware.js';
+import { APPROVAL_DECISIONS, mayDecideApproval } from './approvalPolicy.js';
 
 const PORT = Number(process.env.PORT || 4500);
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://oak:oaklocal@db:5432/oak_expenses';
 const OLLAMA_URL = (process.env.OLLAMA_URL || 'http://host.docker.internal:11434').replace(/\/$/, '');
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:8b';
+const AI_PROVIDER = (process.env.SOCIAL_AI_PROVIDER || 'openai').toLowerCase();
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 120000);
+
 const STORAGE = process.env.SOCIAL_STORAGE_ROOT || '/app/storage';
 const AGENT_TICK_MS = Number(process.env.SOCIAL_AGENT_TICK_MS || 900000);
 const BUILD = 'oak-social-studio-v1.1-brand-editor';
+const APPROVAL_USER = process.env.SOCIAL_APPROVAL_USER || '';
+const APPROVAL_PASSWORD = process.env.SOCIAL_APPROVAL_PASSWORD || '';
+const TELEGRAM_BOT_TOKEN = process.env.SOCIAL_TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.SOCIAL_TELEGRAM_CHAT_ID || '';
+const SOCIAL_PUBLIC_URL = (process.env.SOCIAL_PUBLIC_URL || '').replace(/\/$/, '');
+const TELEGRAM_ENABLED = process.env.SOCIAL_TELEGRAM_ENABLED === 'true';
 
 const DIRS = {
   assets: path.join(STORAGE, 'assets'),
@@ -30,8 +43,56 @@ for (const dir of Object.values(DIRS)) fs.mkdirSync(dir, { recursive: true });
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 const app = express();
-app.use(cors());
+// Restrict cross-origin browser access; same-origin dashboard and CLI requests remain supported.
+// Do not enable wildcard CORS for credentialed administrative endpoints.
+
+// Fail closed until the public origin and staff schema are configured.
+const SOCIAL_AUTH_ORIGIN = process.env.SOCIAL_AUTH_ORIGIN || '';
+const socialOrigin = SOCIAL_AUTH_ORIGIN ? exactOrigin(SOCIAL_AUTH_ORIGIN) : null;
+const socialSession = staffSession(pool);
+const permissionFor = (method, url) => {
+  if (method === 'GET' || method === 'HEAD') return 'read';
+  if (/^\/projects\/[^/]+\/approval\/(approve|reject|changes)$/.test(url)) return 'approve';
+  if (/^\/approval(?:\/|$)/.test(url) || /^\/projects\/[^/]+\/(schedule|mark-published)(?:\/|$)/.test(url))
+    return url.includes('mark-published') ? 'publish.mark' : url.includes('schedule') ? 'schedule' : 'approve';
+  if (/^\/brand(?:\/|$)/.test(url)) return 'brand.write';
+  if (/^\/assets(?:\/|$)/.test(url)) return 'assets.write';
+  if (/^\/campaigns(?:\/|$)/.test(url) || /^\/ai\/plan/.test(url)) return 'campaigns.write';
+  if (/^\/projects(?:\/|$)/.test(url)) return 'projects.write';
+  if (/^\/agent(?:\/|$)/.test(url)) return 'agent.manage';
+  return null; // Unknown mutations must not be authorized implicitly.
+};
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  if (!socialOrigin) return res.status(503).json({ error: 'Staff authentication not configured' });
+  next();
+});
+app.use('/auth', (req, res, next) => {
+  if (req.path === '/login' && req.method === 'POST') return next();
+  if (req.path === '/logout' && req.method === 'POST') return next();
+  if (req.path === '/me' && req.method === 'GET') return next();
+  if (req.path === '/staff' && req.method === 'POST') return next();
+  if (/^\/staff\/[^/]+\/disable$/.test(req.path) && req.method === 'POST') return next();
+  return res.status(404).json({ error: 'Not found' });
+});
+// Parse authentication JSON before login handlers; keep the existing body limits.
+app.use('/auth', express.json({ limit: '16kb' }));
+app.use('/auth', createStaffRouter(pool, { publicOrigin: SOCIAL_AUTH_ORIGIN || 'http://localhost:3100', secureCookies: process.env.SOCIAL_COOKIE_SECURE !== 'false' }));
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  // Legacy Basic Auth approval page must never bypass role-based authentication.
+  if (req.path === '/approval' || req.path.startsWith('/approval/')) return res.status(410).json({ error: 'Legacy approval disabled; use staff approval workflow' });
+  const permission = permissionFor(req.method, req.path);
+  if (!permission) return res.status(404).json({ error: 'Not found' });
+  socialSession(req, res, err => {
+    if (err) return next(err);
+    const authorize = () => staffPermission(permission)(req, res, next);
+    if (req.method === 'GET' || req.method === 'HEAD') return authorize();
+    socialOrigin(req, res, authorize);
+  });
+});
 app.use(express.json({ limit: '8mb' }));
+app.use(express.urlencoded({ extended: false, limit: '16kb' }));
 app.use('/files/assets', express.static(DIRS.assets));
 app.use('/files/thumbs', express.static(DIRS.thumbs));
 app.use('/files/renders', express.static(DIRS.renders));
@@ -160,13 +221,34 @@ async function initDb() {
       weekday INTEGER NOT NULL DEFAULT 1 CHECK (weekday BETWEEN 1 AND 7),
       hour INTEGER NOT NULL DEFAULT 9 CHECK (hour BETWEEN 0 AND 23),
       platforms TEXT[] NOT NULL DEFAULT ARRAY['instagram','redbook','wechat_channels','tiktok'],
-      goal TEXT NOT NULL DEFAULT 'Create a premium weekly Oak Lounge campaign using recent real photos and videos.',
+      goal TEXT NOT NULL DEFAULT 'Create a premium daily Oak Lounge campaign using recent real photos and videos.',
       last_run_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
     INSERT INTO oak_social_agent_settings (id) VALUES (1)
     ON CONFLICT (id) DO NOTHING;
+
+    CREATE TABLE IF NOT EXISTS oak_social_approvals (
+      project_id UUID PRIMARY KEY REFERENCES oak_social_projects(id) ON DELETE CASCADE,
+      decision TEXT NOT NULL CHECK (decision IN ('approved','rejected','changes_requested')),
+      content_hash TEXT NOT NULL,
+      decided_by TEXT NOT NULL,
+      decided_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS oak_social_notification_outbox (
+      id BIGSERIAL PRIMARY KEY,
+      campaign_id UUID NOT NULL REFERENCES oak_social_campaigns(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL DEFAULT 'telegram',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','failed')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      sent_at TIMESTAMPTZ,
+      UNIQUE (campaign_id, channel)
+    );
 
     CREATE TABLE IF NOT EXISTS oak_social_audit (
       id BIGSERIAL PRIMARY KEY,
@@ -267,6 +349,106 @@ async function makeThumbnail(assetPath, mediaType, storedName) {
   return null;
 }
 
+function makeStrictSchema(schema) {
+  const copy = JSON.parse(JSON.stringify(schema));
+
+  function prepare(node) {
+    if (!node || typeof node !== 'object') return;
+
+    delete node.minimum;
+    delete node.maximum;
+
+    if (node.type === 'object') {
+      node.additionalProperties = false;
+      node.required = Object.keys(node.properties || {});
+      for (const child of Object.values(node.properties || {})) {
+        prepare(child);
+      }
+    }
+
+    if (node.items) prepare(node.items);
+  }
+
+  prepare(copy);
+  return copy;
+}
+
+async function fetchOpenAIJson(system, user, _schema, imageContent = []) {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not configured');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        instructions: system + '\nReturn only a valid JSON object with campaign_title, summary and posts. Do not use markdown fences.',
+        input: imageContent.length
+          ? [{
+              role: 'user',
+              content: [
+                { type: 'input_text',
+                  text: 'Return the campaign as valid JSON.\n\n' + user },
+                ...imageContent
+              ]
+            }]
+          : 'Return the campaign as valid JSON.\n\n' + user,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'oak_social_campaign',
+            strict: true,
+            schema: makeStrictSchema(_schema)
+          }
+        },
+        store: false
+      }),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      // Avoid logging provider response bodies, which can contain sensitive information.
+      const errorBody = await response.json().catch(() => ({}));
+      const detail = errorBody?.error || {};
+      console.error('OpenAI rejection:', {
+        status: response.status,
+        type: detail.type || null,
+        code: detail.code || null,
+        param: detail.param || null,
+        message: detail.message || null
+      });
+      throw new Error(`OpenAI returned HTTP ${response.status}`);
+    }
+    const result = await response.json();
+    const content = (result.output || []).flatMap(x => x.content || [])
+      .filter(x => x.type === 'output_text').map(x => x.text).join('');
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.posts) ||
+        typeof parsed.campaign_title !== 'string' || typeof parsed.summary !== 'string') {
+      throw new Error('OpenAI returned an invalid campaign structure');
+    }
+    for (const post of parsed.posts) {
+      if (!post || typeof post !== 'object' || !Array.isArray(post.scenes) ||
+          !Array.isArray(post.hashtags) || typeof post.caption !== 'string') {
+        throw new Error('OpenAI returned an invalid post structure');
+      }
+    }
+    return parsed;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchCampaignJson(system, user, schema, imageContent = []) {
+  if (AI_PROVIDER === 'ollama') return fetchOllamaJson(system, user, schema);
+  if (AI_PROVIDER !== 'openai') throw new Error('Unsupported SOCIAL_AI_PROVIDER');
+  // Fail closed: never silently switch providers or spend money unexpectedly.
+  return fetchOpenAIJson(system, user, schema, imageContent);
+}
+
 async function fetchOllamaJson(system, user, schema, timeoutMs = 180000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -335,17 +517,149 @@ const campaignSchema = {
   }
 };
 
+async function buildVisionContentForSelectedAssets(assets) {
+  const content = [];
+
+  for (const asset of assets
+    .filter(a => ['image', 'video'].includes(a.media_type))
+    .slice(0, 4)) {
+
+    try {
+      const name = asset.thumbnail_name || asset.stored_name;
+      if (!name) continue;
+
+      const directory = asset.thumbnail_name ? DIRS.thumbs : DIRS.assets;
+      const file = path.join(directory, path.basename(name));
+
+      const jpeg = await sharp(file)
+        .rotate()
+        .resize(768, 768, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: 75 })
+        .toBuffer();
+
+      content.push({
+        type: 'input_text',
+        text: `Analyze the image for Oak asset ${asset.id}. Describe only what is visible. Use this asset ID when matching the image to a campaign scene.`
+      });
+
+      content.push({
+        type: 'input_image',
+        image_url: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
+        detail: 'low'
+      });
+    } catch (error) {
+      console.warn('Vision preview unavailable:', asset.id);
+    }
+  }
+
+  return content;
+}
+
+
+async function analyzeOakAsset(asset) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OpenAI key required for visual analysis');
+  }
+
+  const filename = asset.thumbnail_name || asset.stored_name;
+  if (!filename) throw new Error('Selected media has no stored file');
+
+  const directory = asset.thumbnail_name ? DIRS.thumbs : DIRS.assets;
+  const file = path.join(directory, path.basename(filename));
+
+  const jpeg = await sharp(file)
+    .rotate()
+    .resize(768, 768, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+    .jpeg({ quality: 78 })
+    .toBuffer();
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      store: false,
+      input: [{
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: `Return only JSON with keys category and description.
+Category must be food, drink, interior, event, or other.
+Describe what is actually visible in this Oak Lounge image.
+Do not invent ingredients, product names, events, or prices.
+A food photograph must not be classified as a cocktail
+unless a cocktail is clearly its main subject.`
+          },
+          {
+            type: 'input_image',
+            image_url: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
+            detail: 'low'
+          }
+        ]
+      }],
+      text: { format: { type: 'json_object' } }
+    }),
+    signal: AbortSignal.timeout(45000)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Image analysis failed: HTTP ${response.status}`);
+  }
+
+  const result = await response.json();
+  const output = (result.output || [])
+    .flatMap(item => item.content || [])
+    .filter(item => item.type === 'output_text')
+    .map(item => item.text)
+    .join('');
+
+  const analysis = JSON.parse(output);
+  const categories = ['food', 'drink', 'interior', 'event', 'other'];
+
+  if (!categories.includes(analysis.category) ||
+      typeof analysis.description !== 'string' ||
+      !analysis.description.trim()) {
+    throw new Error('Invalid visual analysis response');
+  }
+
+  return {
+    id: asset.id,
+    category: analysis.category,
+    description: analysis.description.slice(0, 1000)
+  };
+}
+
 async function buildCampaignProposal({ brief, objective = '', platforms = [], languages = [], assetIds = [] }) {
   const brand = (await pool.query('SELECT * FROM oak_social_brand WHERE id=1')).rows[0];
   let assets = [];
   if (assetIds.length) {
-    const q = await pool.query(`SELECT id, original_name, media_type, tags, notes FROM oak_social_assets WHERE id = ANY($1::uuid[]) AND is_active=true`, [assetIds]);
+    const q = await pool.query(`SELECT id, original_name, stored_name, thumbnail_name, media_type, tags, notes FROM oak_social_assets WHERE id = ANY($1::uuid[]) AND is_active=true`, [assetIds]);
     assets = q.rows;
   }
   const allowedIds = new Set(assets.map(a => a.id));
   const assetText = assets.length
     ? assets.map(a => `- ${a.id} | ${a.media_type} | ${a.original_name} | tags: ${(a.tags || []).join(', ')} | notes: ${a.notes || ''}`).join('\n')
     : '- No assets selected yet. Use an empty asset_id in scenes and write clear scene notes so the user can attach media later.';
+
+  const visualAnalysis = [];
+  for (const asset of assets.filter(a =>
+    ['image', 'video'].includes(a.media_type)).slice(0, 4)) {
+    visualAnalysis.push(await analyzeOakAsset(asset));
+  }
+
+  const visualDescriptions = visualAnalysis.map(a =>
+    `Asset ${a.id}: category=${a.category}; visible=${a.description}`
+  ).join('\n');
 
   const system = `You are Oak Social Agent, the bilingual social-media creative planner for ${brand.brand_name}.\n` +
     `Brand tone: ${brand.tone}.\nBrand rules: ${brand.brand_rules}.\n` +
@@ -356,7 +670,18 @@ async function buildCampaignProposal({ brief, objective = '', platforms = [], la
 
   const user = `Campaign brief:\n${brief}\n\nObjective:\n${objective || 'Build awareness and visits to Oak Lounge.'}\n\nRequested platforms: ${platforms.join(', ') || 'Instagram, Facebook, Redbook, WeChat Channels, TikTok'}\nRequested languages: ${languages.join(', ') || (brand.languages || []).join(', ')}\n\nAvailable assets:\n${assetText}\n\nCreate one strong draft for each requested platform. Keep short-video scene plans editable and practical. For still/carousel posts, scenes represent image slots.`;
 
-  const proposal = await fetchOllamaJson(system, user, campaignSchema);
+  const visionContent = AI_PROVIDER === 'openai'
+    ? await buildVisionContentForSelectedAssets(assets)
+    : [];
+  const verifiedVisualBrief = user + '\n\nVERIFIED IMAGE ANALYSIS:\n' +
+    (visualDescriptions || 'No selected visual assets.') +
+    '\nMatch every headline, caption, hook and scene to the actual image. ' +
+    'Never describe a food image as a cocktail image. ' +
+    'Use only matching asset IDs.';
+
+  const proposal = await fetchCampaignJson(
+    system, verifiedVisualBrief, campaignSchema, visionContent
+  );
   proposal.posts = (proposal.posts || []).map(post => ({
     ...post,
     platform: String(post.platform || '').toLowerCase().replace(/\s+/g, '_'),
@@ -368,7 +693,8 @@ async function buildCampaignProposal({ brief, objective = '', platforms = [], la
   return proposal;
 }
 
-async function saveCampaignFromProposal({ brief, objective, platforms, languages, proposal, source = 'manual' }) {
+async function saveCampaignFromProposal({ brief, objective, platforms, languages, proposal, source = 'manual', actorId }) {
+  if (!actorId) throw new Error('Authenticated staff required');
   const brandDefaults = (await pool.query('SELECT default_template, default_subtitle_mode FROM oak_social_brand WHERE id=1')).rows[0] || {};
   const client = await pool.connect();
   try {
@@ -384,14 +710,14 @@ async function saveCampaignFromProposal({ brief, objective, platforms, languages
       const id = randomUUID();
       const row = (await client.query(`
         INSERT INTO oak_social_projects(
-          id,campaign_id,platform,format,title,hook,caption,hashtags,language,aspect_ratio,duration_seconds,status,scenes,template_style,subtitle_mode
-        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12,$13,$14)
+          id,campaign_id,platform,format,title,hook,caption,hashtags,language,aspect_ratio,duration_seconds,status,scenes,template_style,subtitle_mode,created_by_staff_id,last_edited_by_staff_id
+        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12,$13,$14,$15,$15)
         RETURNING *
       `, [
         id, campaignId, post.platform || 'instagram', post.format || 'still', post.title || '', post.hook || '',
         post.caption || '', post.hashtags || [], post.language || 'English', post.aspect_ratio || '4:5',
         Number(post.duration_seconds || 15), JSON.stringify(post.scenes || []),
-        brandDefaults.default_template || 'classic', brandDefaults.default_subtitle_mode || 'bilingual'
+        brandDefaults.default_template || 'classic', brandDefaults.default_subtitle_mode || 'bilingual', actorId
       ])).rows[0];
       projects.push(row);
     }
@@ -551,7 +877,24 @@ async function buildOverlayPng({ width, height, text, subtitle = '', brand, logo
   return await canvas.toBuffer();
 }
 
-async function renderStill(project) {
+// Compare-and-swap prevents a slow render/export from overwriting a concurrent edit
+// or preserving an approval for content that has since changed. The approved hash
+// includes these artifact paths, so every successful update requires reapproval.
+export async function commitGeneratedArtifact(project, actorId, field, outputName) {
+  if (!['cover_path', 'render_path', 'export_path'].includes(field)) throw new Error('Invalid artifact field');
+  if (!actorId) throw new Error('Authenticated staff required');
+  const result = await pool.query(
+    `UPDATE oak_social_projects SET ${field}=$1, status='draft', scheduled_for=NULL,
+       last_edited_by_staff_id=$2, updated_at=now()
+     WHERE id=$3 AND updated_at IS NOT DISTINCT FROM $4
+       AND status NOT IN ('scheduled', 'published') RETURNING id`,
+    [outputName, actorId, project.id, project.updated_at_exact]
+  );
+  if (result.rowCount !== 1) throw new Error('Project changed while generating artifact; retry from the latest draft');
+}
+
+async function renderStill(project, actorId) {
+  if (['scheduled', 'published'].includes(project.status)) throw new Error('Cannot regenerate a scheduled or published project');
   const { width, height } = dimensionsForRatio(project.aspect_ratio);
   const scenes = Array.isArray(project.scenes) ? project.scenes : [];
   const ids = [...scenes.map(s => s.asset_id).filter(Boolean), project.cover_asset_id].filter(Boolean);
@@ -587,7 +930,12 @@ async function renderStill(project) {
   } finally {
     if (tempFrame) await fsp.rm(tempFrame, { force: true }).catch(() => {});
   }
-  await pool.query(`UPDATE oak_social_projects SET cover_path=$1, updated_at=now() WHERE id=$2`, [outputName, project.id]);
+  try {
+    await commitGeneratedArtifact(project, actorId, 'cover_path', outputName);
+  } catch (error) {
+    await fsp.rm(path.join(DIRS.renders, outputName), { force: true }).catch(() => {});
+    throw error;
+  }
   await audit('cover_rendered', 'project', project.id, { output: outputName, cover_asset_id: project.cover_asset_id || null });
   return outputName;
 }
@@ -599,7 +947,8 @@ async function makeOverlayPng(opts) {
   return file;
 }
 
-async function renderVideo(project) {
+async function renderVideo(project, actorId) {
+  if (['scheduled', 'published'].includes(project.status)) throw new Error('Cannot regenerate a scheduled or published project');
   const scenes = Array.isArray(project.scenes) ? project.scenes : [];
   if (!scenes.length) throw new Error('Add at least one scene before rendering video.');
   const { width, height } = dimensionsForRatio(project.aspect_ratio || '9:16');
@@ -652,7 +1001,12 @@ async function renderVideo(project) {
     } else {
       await fsp.copyFile(joined, outputPath);
     }
-    await pool.query(`UPDATE oak_social_projects SET render_path=$1, updated_at=now() WHERE id=$2`, [outputName, project.id]);
+    try {
+    await commitGeneratedArtifact(project, actorId, 'render_path', outputName);
+  } catch (error) {
+    await fsp.rm(path.join(DIRS.renders, outputName), { force: true }).catch(() => {});
+    throw error;
+  }
     await audit('video_rendered', 'project', project.id, { output: outputName, scenes: segmentFiles.length, music_asset_id: project.music_asset_id || null });
     return outputName;
   } finally {
@@ -660,7 +1014,8 @@ async function renderVideo(project) {
   }
 }
 
-async function exportProject(project) {
+async function exportProject(project, actorId) {
+  if (['scheduled', 'published'].includes(project.status)) throw new Error('Cannot regenerate a scheduled or published project');
   const outputName = `oak-social-${project.platform}-${project.id}-${Date.now()}.zip`;
   const outputPath = path.join(DIRS.exports, outputName);
   await new Promise((resolve, reject) => {
@@ -695,9 +1050,185 @@ async function exportProject(project) {
     }
     archive.finalize();
   });
-  await pool.query(`UPDATE oak_social_projects SET export_path=$1, updated_at=now() WHERE id=$2`, [outputName, project.id]);
+  try {
+    await commitGeneratedArtifact(project, actorId, 'export_path', outputName);
+  } catch (error) {
+    await fsp.rm(path.join(DIRS.exports, outputName), { force: true }).catch(() => {});
+    throw error;
+  }
   await audit('publish_package_created', 'project', project.id, { output: outputName });
   return outputName;
+}
+
+// Approval Core v1: Basic auth must only be exposed through HTTPS reverse proxy.
+function approvalAuth(req, res, next) {
+  if (!APPROVAL_USER || !APPROVAL_PASSWORD) return res.status(503).json({ error: 'Approval credentials are not configured' });
+  const header = req.get('authorization') || '';
+  let raw = '';
+  try { if (/^Basic [A-Za-z0-9+/]+={0,2}$/.test(header)) raw = Buffer.from(header.slice(6), 'base64').toString('utf8'); } catch {}
+  const colon = raw.indexOf(':');
+  const user = colon >= 0 ? raw.slice(0, colon) : '';
+  const password = colon >= 0 ? raw.slice(colon + 1) : '';
+  const equal = (a,b) => {
+    const x = createHash('sha256').update(a).digest();
+    const y = createHash('sha256').update(b).digest();
+    return timingSafeEqual(x,y);
+  };
+  if (!equal(user, APPROVAL_USER) || !equal(password, APPROVAL_PASSWORD)) {
+    res.set('WWW-Authenticate', 'Basic realm="Oak Social Approval"');
+    return res.status(401).send('Authentication required');
+  }
+  res.set('Cache-Control', 'no-store');
+  next();
+}
+
+// Reject cross-site browser mutations; CLI requests without Origin/Referer still need Basic auth.
+function requireSameOrigin(req, res, next) {
+  const source = req.get('origin') || req.get('referer');
+  if (!source) return next();
+  try {
+    const actual = new URL(source);
+    const expected = new URL(SOCIAL_PUBLIC_URL);
+    if (actual.origin === expected.origin && expected.protocol === 'https:') return next();
+  } catch {}
+  return res.status(403).json({ error: 'Origin check failed' });
+}
+
+function approvalCsrfToken(id, decision) {
+  return createHmac('sha256', APPROVAL_PASSWORD).update(`oak-social-approval:v2:${id}:${decision}`).digest('hex');
+}
+function verifyApprovalCsrf(req, res, next) {
+  const expected = approvalCsrfToken(req.params.id, req.params.decision);
+  const supplied = typeof req.body?._csrf === 'string' ? req.body._csrf : '';
+  if (!/^[a-f0-9]{64}$/.test(supplied) || !timingSafeEqual(Buffer.from(expected), Buffer.from(supplied)))
+    return res.status(403).send('Invalid approval form token');
+  next();
+}
+
+function approvalHash(row) {
+  const fields = ['platform','format','title','hook','caption','hashtags','language','aspect_ratio',
+    'duration_seconds','scenes','template_style','subtitle_mode','cover_asset_id','music_asset_id',
+    'music_volume','platform_preset','render_path','cover_path','export_path'];
+  return createHash('sha256').update(JSON.stringify(fields.map(k => row[k] ?? null))).digest('hex');
+}
+
+async function hasValidApproval(client, id) {
+  const result = await client.query(`SELECT p.*, a.decision, a.content_hash FROM oak_social_projects p
+    LEFT JOIN oak_social_approvals a ON a.project_id=p.id WHERE p.id=$1`, [id]);
+  const row = result.rows[0];
+  return Boolean(row && row.decision === 'approved' && row.content_hash === approvalHash(row));
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Staff approval API. Legacy HTML approval routes remain disabled by the auth gate.
+// Serialize decisions with project edits/scheduling using a project row lock.
+app.post('/projects/:id/approval/:decision', asyncRoute(async (req, res) => {
+  const decision = APPROVAL_DECISIONS[req.params.decision];
+  if (!decision) return res.status(400).json({ error: 'Invalid approval decision' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM oak_social_projects WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const project = rows[0];
+    if (!project) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Project not found' }); }
+    if (!mayDecideApproval(req.staff, project, decision)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Approval not permitted for this project' });
+    }
+    if (project.status === 'published' || project.status === 'scheduled') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Cannot change approval after scheduling or publishing' });
+    }
+    const hash = approvalHash(project);
+    await client.query(`INSERT INTO oak_social_approvals(project_id,decision,content_hash,decided_by)
+      VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET
+      decision=EXCLUDED.decision,content_hash=EXCLUDED.content_hash,
+      decided_by=EXCLUDED.decided_by,decided_at=now()`,
+      [project.id, decision, hash, req.staff.id]);
+    await client.query('UPDATE oak_social_projects SET status=$1,updated_at=now() WHERE id=$2',
+      [decision, project.id]);
+    await client.query(`INSERT INTO oak_social_staff_audit(actor_id,action,target_id,details)
+      VALUES($1,$2,$3,$4::jsonb)`, [req.staff.id, 'approval.decision', project.id, JSON.stringify({ decision, content_hash: hash })]);
+    await client.query('COMMIT');
+    return res.json({ ok: true, project_id: project.id, decision });
+  } catch (err) { await client.query('ROLLBACK'); throw err; }
+  finally { client.release(); }
+}));
+
+app.get('/approval', asyncRoute(async (_req,res) => {
+  const rows = (await pool.query(`SELECT p.*, a.decision, a.content_hash
+    FROM oak_social_projects p LEFT JOIN oak_social_approvals a ON a.project_id=p.id
+    ORDER BY p.created_at DESC LIMIT 100`)).rows;
+  const cards = rows.map(p => {
+    const valid = p.decision === 'approved' && p.content_hash === approvalHash(p);
+    const status = valid ? 'approved' : p.decision === 'approved' ? 'changed_since_approval' : p.decision || 'pending';
+    const btn = (decision,label) => `<form method="POST" action="/approval/${encodeURIComponent(p.id)}/${decision}"><input type="hidden" name="_csrf" value="${approvalCsrfToken(p.id, decision)}"><button>${label}</button></form>`;
+    return `<article><small>${escapeHtml(p.platform)} · ${escapeHtml(p.language)} · ${escapeHtml(status)}</small><h2>${escapeHtml(p.title)}</h2><p>${escapeHtml(p.caption)}</p><p>${escapeHtml((p.hashtags||[]).join(' '))}</p><div class="actions">${btn('approve','Approve')}${btn('changes','Request changes')}${btn('reject','Reject')}</div></article>`;
+  }).join('');
+  res.type('html').send(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Oak Social Approval</title><style>body{font:16px system-ui;background:#101820;color:#f5f5f5;max-width:760px;margin:auto;padding:20px}article{background:#20303a;border-radius:14px;padding:18px;margin:14px 0;overflow-wrap:anywhere}small{color:#c0c9ce}p{white-space:pre-wrap}button{padding:12px;border-radius:9px;background:#d9b382;border:0;font-weight:bold;cursor:pointer}.actions{display:flex;flex-wrap:wrap;gap:8px}</style></head><body><h1>Oak Social · Approval Inbox</h1><p>Review drafts. Approval never publishes automatically.</p>${cards || '<p>No projects yet.</p>'}</body></html>`);
+}));
+
+// Browser form POSTs use Basic auth and Origin/Referer checks as CSRF defense.
+app.post('/approval/:id/:decision', asyncRoute(async (req,res) => {
+  // Form token protects against cross-site requests even when Origin is absent.
+  const decisions = { approve:'approved', reject:'rejected', changes:'changes_requested' };
+  const decision = decisions[req.params.decision];
+  if (!decision) return res.status(400).send('Invalid decision');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query('SELECT * FROM oak_social_projects WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const project = result.rows[0];
+    if (!project) { await client.query('ROLLBACK'); return res.status(404).send('Not found'); }
+    const hash = approvalHash(project);
+    await client.query(`INSERT INTO oak_social_approvals(project_id,decision,content_hash,decided_by)
+      VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET
+      decision=EXCLUDED.decision, content_hash=EXCLUDED.content_hash,
+      decided_by=EXCLUDED.decided_by,decided_at=now()`, [project.id,decision,hash,APPROVAL_USER]);
+    await client.query(`UPDATE oak_social_projects SET status=$1,updated_at=now() WHERE id=$2`,
+      [decision === 'approved' ? 'approved' : decision, project.id]);
+    await client.query('COMMIT');
+    await audit('approval_decision', 'project', project.id, { decision, by: APPROVAL_USER });
+    res.redirect(303, '/approval');
+  } catch(e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}));
+
+async function telegramOutboxTick() {
+  if (!TELEGRAM_ENABLED || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !SOCIAL_PUBLIC_URL) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const {rows} = await client.query(`SELECT * FROM oak_social_notification_outbox
+      WHERE status IN ('pending','failed') AND next_attempt_at<=now() AND attempts<8
+      ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 3`);
+    for (const job of rows) {
+      const link = `${SOCIAL_PUBLIC_URL}/approval`;
+      const message = `Oak Social: a new campaign is ready for review. Open your secure approval inbox: ${link}`;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+        let response;
+        try { response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true}),signal:controller.signal
+        }); } finally { clearTimeout(timeout); }
+        if (!response.ok) throw new Error(`Telegram HTTP ${response.status}`);
+        const telegramResult = await response.json();
+        if (telegramResult?.ok !== true) throw new Error(`Telegram rejected message: ${String(telegramResult?.description || 'unknown').slice(0,100)}`);
+        await client.query(`UPDATE oak_social_notification_outbox SET status='sent',attempts=attempts+1,sent_at=now(),last_error=NULL WHERE id=$1`,[job.id]);
+      } catch(e) {
+        await client.query(`UPDATE oak_social_notification_outbox SET status='failed',attempts=attempts+1,
+          next_attempt_at=now()+interval '1 minute' * LEAST(60,POWER(2,LEAST(attempts,6))),last_error=$2 WHERE id=$1`,
+          [job.id,String(e.message).slice(0,200)]);
+      }
+    }
+    await client.query('COMMIT');
+  } catch(e) { await client.query('ROLLBACK'); console.error('Telegram outbox:',e.message); }
+  finally { client.release(); }
 }
 
 app.get('/health', asyncRoute(async (_req, res) => {
@@ -782,6 +1313,116 @@ app.post('/assets/upload', upload.array('files', 30), asyncRoute(async (req, res
   res.status(201).json({ assets: created });
 }));
 
+
+// Authorized, read-only source scan. Files are copied into Oak Social storage.
+// The source directory must be explicitly mounted by the deployment.
+app.post('/assets/import-local', asyncRoute(async (req, res) => {
+  const root = process.env.SOCIAL_MEDIA_IMPORT_ROOT;
+  if (!root) {
+    return res.status(503).json({ error: 'Media import folder not configured' });
+  }
+
+  const { discoverMedia } = await import('./mediaDiscovery.js');
+  const sourceRoot = await fsp.realpath(root);
+  const discovered = await discoverMedia(sourceRoot, {
+    minimumAgeMs: 120000
+  });
+
+  const imported = [];
+  let skipped = 0;
+
+  for (const item of discovered.slice(0, 30)) {
+    if (item.size > 300 * 1024 * 1024) {
+      skipped++;
+      continue;
+    }
+
+    const ext = path.extname(item.path).toLowerCase();
+    const mime = ({
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.mp4': 'video/mp4',
+      '.mov': 'video/quicktime'
+    })[ext];
+    if (!mime) continue;
+
+    // Check checksum rather than only filename.
+    const duplicate = await pool.query(
+      'SELECT id FROM oak_social_assets WHERE stored_name LIKE $1 LIMIT 1',
+      [`import-${item.checksum}.%`]
+    );
+    if (duplicate.rowCount) {
+      skipped++;
+      continue;
+    }
+
+    const source = path.join(sourceRoot, item.path);
+    const name = `import-${item.checksum}${ext}`;
+    const destination = path.join(DIRS.assets, name);
+
+    try {
+      await fsp.copyFile(source, destination, fs.constants.COPYFILE_EXCL);
+    } catch (err) {
+      if (err.code === 'EEXIST') {
+        skipped++;
+        continue;
+      }
+      throw err;
+    }
+
+    const type = item.type;
+    let width = null, height = null, duration = null;
+
+    try {
+      if (type === 'image') {
+        const meta = await sharp(destination).metadata();
+        width = meta.width || null;
+        height = meta.height || null;
+      } else {
+        const meta = await probeMedia(destination);
+        width = meta.width;
+        height = meta.height;
+        duration = meta.duration;
+      }
+
+      const thumb = await makeThumbnail(destination, type, name);
+      const id = randomUUID();
+
+      const result = await pool.query(`
+        INSERT INTO oak_social_assets
+        (id, original_name, stored_name, thumbnail_name,
+         mime_type, media_type, size_bytes, width, height,
+         duration_seconds, tags, notes)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        ON CONFLICT (stored_name) DO NOTHING RETURNING *
+      `, [
+        id, path.basename(item.path), name, thumb,
+        mime, type, item.size, width, height, duration,
+        ['media-drive'], `Imported from: ${item.path}`
+      ]);
+
+      if (result.rowCount) imported.push(serializeAsset(result.rows[0]));
+      else skipped++;
+    } catch (err) {
+      await fsp.rm(destination, { force: true }).catch(() => {});
+      throw err;
+    }
+  }
+
+  await audit('media_drive_import', 'asset_batch', null, {
+    imported: imported.length, skipped
+  });
+
+  res.json({
+    imported: imported.length,
+    skipped,
+    remaining_scan: Math.max(0, discovered.length - 30),
+    assets: imported
+  });
+}));
+
 app.get('/assets', asyncRoute(async (req, res) => {
   const type = req.query.media_type ? String(req.query.media_type) : null;
   const q = String(req.query.q || '').trim();
@@ -832,7 +1473,8 @@ app.post('/campaigns', asyncRoute(async (req, res) => {
     platforms: Array.isArray(body.platforms) ? body.platforms : [],
     languages: Array.isArray(body.languages) ? body.languages : [],
     proposal: body.proposal,
-    source: body.source || 'manual'
+    source: body.source || 'manual',
+    actorId: req.staff.id
   });
   res.status(201).json(result);
 }));
@@ -855,19 +1497,23 @@ app.get('/projects/:id', asyncRoute(async (req, res) => {
 
 app.put('/projects/:id', asyncRoute(async (req, res) => {
   const body = req.body || {};
+  // Content edits always return a project to draft. Clients cannot preserve
+  // an approved/scheduled/published status while changing the approval hash.
+  if (body.status && body.status !== 'draft')
+    return res.status(403).json({ error: 'Content edits must return to draft' });
   const row = (await pool.query(`
     UPDATE oak_social_projects SET
       platform=$1, format=$2, title=$3, hook=$4, caption=$5, hashtags=$6,
       language=$7, aspect_ratio=$8, duration_seconds=$9, scenes=$10, status=$11,
       template_style=$12, subtitle_mode=$13, cover_asset_id=$14, music_asset_id=$15,
-      music_volume=$16, platform_preset=$17, updated_at=now()
+      music_volume=$16, platform_preset=$17, last_edited_by_staff_id=$19, updated_at=now()
     WHERE id=$18 RETURNING *
   `, [
     body.platform || 'instagram', body.format || 'still', body.title || '', body.hook || '', body.caption || '',
     parseTags(body.hashtags), body.language || 'English', body.aspect_ratio || '4:5', Number(body.duration_seconds || 15),
-    JSON.stringify(Array.isArray(body.scenes) ? body.scenes : []), body.status || 'draft',
+    JSON.stringify(Array.isArray(body.scenes) ? body.scenes : []), 'draft',
     body.template_style || 'classic', body.subtitle_mode || 'bilingual', body.cover_asset_id || null, body.music_asset_id || null,
-    Math.max(0, Math.min(1, Number(body.music_volume ?? 0.18))), body.platform_preset || '', req.params.id
+    Math.max(0, Math.min(1, Number(body.music_volume ?? 0.18))), body.platform_preset || '', req.params.id, req.staff.id
   ])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
   await audit('project_updated', 'project', req.params.id, { platform: row.platform, format: row.format });
@@ -875,40 +1521,61 @@ app.put('/projects/:id', asyncRoute(async (req, res) => {
 }));
 
 app.post('/projects/:id/render/still', asyncRoute(async (req, res) => {
-  const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
+  const row = (await pool.query(`SELECT *, updated_at::text AS updated_at_exact FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
-  const output = await renderStill(row);
+  const output = await renderStill(row, req.staff.id);
   res.json({ ok: true, render_url: relativeUrl('renders', output), cover_url: relativeUrl('renders', output) });
 }));
 
 app.post('/projects/:id/render/video', asyncRoute(async (req, res) => {
-  const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
+  const row = (await pool.query(`SELECT *, updated_at::text AS updated_at_exact FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
-  const output = await renderVideo(row);
+  const output = await renderVideo(row, req.staff.id);
   res.json({ ok: true, render_url: relativeUrl('renders', output) });
 }));
 
 app.post('/projects/:id/export', asyncRoute(async (req, res) => {
-  const row = (await pool.query(`SELECT * FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
+  const row = (await pool.query(`SELECT *, updated_at::text AS updated_at_exact FROM oak_social_projects WHERE id=$1`, [req.params.id])).rows[0];
   if (!row) return res.status(404).json({ error: 'Project not found' });
-  const output = await exportProject(row);
+  const output = await exportProject(row, req.staff.id);
   res.json({ ok: true, export_url: relativeUrl('exports', output) });
 }));
+
+async function approvedStatusTransition(id, status, scheduledFor = null) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query('SELECT id FROM oak_social_projects WHERE id=$1 FOR UPDATE', [id]);
+    if (!result.rows.length) { await client.query('ROLLBACK'); return { missing: true }; }
+    if (!await hasValidApproval(client, id)) {
+      await client.query('ROLLBACK');
+      return { denied: true };
+    }
+    const { rows } = await client.query(
+      `UPDATE oak_social_projects SET status=$1,scheduled_for=COALESCE($2,scheduled_for),updated_at=now() WHERE id=$3 RETURNING *`,
+      [status, scheduledFor, id]);
+    await client.query('COMMIT');
+    return { row: rows[0] };
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
 
 app.post('/projects/:id/schedule', asyncRoute(async (req, res) => {
   const when = req.body?.scheduled_for ? new Date(req.body.scheduled_for) : null;
   if (!when || Number.isNaN(when.getTime())) return res.status(400).json({ error: 'Valid scheduled_for is required' });
-  const row = (await pool.query(`UPDATE oak_social_projects SET scheduled_for=$1,status='scheduled',updated_at=now() WHERE id=$2 RETURNING *`, [when.toISOString(), req.params.id])).rows[0];
-  if (!row) return res.status(404).json({ error: 'Project not found' });
+  const result = await approvedStatusTransition(req.params.id, 'scheduled', when.toISOString());
+  if (result.missing) return res.status(404).json({ error: 'Project not found' });
+  if (result.denied) return res.status(403).json({ error: 'Current content requires approval before scheduling' });
   await audit('project_scheduled', 'project', req.params.id, { scheduled_for: when.toISOString() });
-  res.json(serializeProject(row));
+  res.json(serializeProject(result.row));
 }));
 
 app.post('/projects/:id/mark-published', asyncRoute(async (req, res) => {
-  const row = (await pool.query(`UPDATE oak_social_projects SET status='published',updated_at=now() WHERE id=$1 RETURNING *`, [req.params.id])).rows[0];
-  if (!row) return res.status(404).json({ error: 'Project not found' });
+  const result = await approvedStatusTransition(req.params.id, 'published');
+  if (result.missing) return res.status(404).json({ error: 'Project not found' });
+  if (result.denied) return res.status(403).json({ error: 'Current content requires approval before marking published' });
   await audit('project_marked_published', 'project', req.params.id, {});
-  res.json(serializeProject(row));
+  res.json(serializeProject(result.row));
 }));
 
 app.get('/agent/settings', asyncRoute(async (_req, res) => {
@@ -926,29 +1593,75 @@ app.put('/agent/settings', asyncRoute(async (req, res) => {
   res.json(row);
 }));
 
+// A session-scoped lock serializes manual and scheduled agent requests across instances.
+// Keep the lock connection until campaign creation and last_run_at update finish.
+const SOCIAL_AGENT_LOCK_KEY = 80421963;
+
 async function runAgentDraft(reason = 'manual') {
-  const settings = (await pool.query('SELECT * FROM oak_social_agent_settings WHERE id=1')).rows[0];
-  const assets = (await pool.query(`SELECT id FROM oak_social_assets WHERE is_active=true ORDER BY created_at DESC LIMIT 20`)).rows;
-  const brief = `${settings.goal}\nUse recent Oak Lounge media. Produce a multi-platform weekly draft. This is a draft for human approval, not an instruction to auto-publish.`;
-  const proposal = await buildCampaignProposal({
-    brief,
-    objective: 'Maintain a consistent weekly Oak Lounge social presence and encourage visits.',
-    platforms: settings.platforms || [],
-    languages: ['English', 'Simplified Chinese'],
-    assetIds: assets.map(a => a.id)
-  });
-  const saved = await saveCampaignFromProposal({
-    brief,
-    objective: 'Weekly social presence',
-    platforms: settings.platforms || [],
-    languages: ['English', 'Simplified Chinese'],
-    proposal,
-    source: 'weekly_agent'
-  });
-  await pool.query(`UPDATE oak_social_campaigns SET status='agent_draft' WHERE id=$1`, [saved.campaign_id]);
-  await pool.query(`UPDATE oak_social_agent_settings SET last_run_at=now() WHERE id=1`);
-  await audit('weekly_agent_draft_created', 'campaign', saved.campaign_id, { reason });
-  return saved;
+  const lockClient = await pool.connect();
+  let locked = false;
+  try {
+    const result = await lockClient.query('SELECT pg_try_advisory_lock($1) AS acquired', [SOCIAL_AGENT_LOCK_KEY]);
+    locked = result.rows[0]?.acquired === true;
+    if (!locked) {
+      const err = new Error('Social agent generation is already in progress');
+      err.status = 409;
+      throw err;
+    }
+
+    const settings = (await pool.query('SELECT * FROM oak_social_agent_settings WHERE id=1')).rows[0];
+    if (!settings) throw new Error('Social agent settings are missing');
+
+    // Only scheduled runs are limited to one per local calendar day.
+    // Query the campaign record as well as last_run_at, so a failure after
+    // saving a campaign cannot create a duplicate on the next scheduler tick.
+    if (reason === 'scheduled_daily_agent') {
+      const zone = settings.timezone || 'Asia/Shanghai';
+      const today = zonedParts(new Date(), zone).dateKey;
+      const existing = await pool.query(`
+        SELECT id FROM oak_social_campaigns
+        WHERE source='daily_agent' AND ai_proposal->>'_oak_agent_reason'='scheduled_daily_agent'
+          AND (created_at AT TIME ZONE $1)::date = $2::date
+        LIMIT 1
+      `, [zone, today]);
+      if (existing.rowCount) return { skipped: true, reason: 'already_generated_today' };
+      if (settings.last_run_at && zonedParts(new Date(settings.last_run_at), zone).dateKey === today) {
+        return { skipped: true, reason: 'already_run_today' };
+      }
+    }
+
+    const assets = (await pool.query(`SELECT id FROM oak_social_assets WHERE is_active=true ORDER BY created_at DESC LIMIT 20`)).rows;
+    const brief = `${settings.goal}\nUse recent Oak Lounge media. Produce one multi-platform daily campaign draft. This is a draft for human approval, not an instruction to auto-publish.`;
+    const proposal = await buildCampaignProposal({
+      brief,
+      objective: 'Maintain a consistent daily Oak Lounge social presence and encourage visits.',
+      platforms: settings.platforms || [],
+      languages: ['English', 'Simplified Chinese'],
+      assetIds: assets.map(a => a.id)
+    });
+    // Persist the trigger alongside the proposal to support durable deduplication.
+    const saved = await saveCampaignFromProposal({
+      brief,
+      objective: 'Daily social presence',
+      platforms: settings.platforms || [],
+      languages: ['English', 'Simplified Chinese'],
+      proposal: { ...proposal, _oak_agent_reason: reason },
+      source: 'daily_agent'
+    });
+    await pool.query(`UPDATE oak_social_campaigns SET status='agent_draft' WHERE id=$1`, [saved.campaign_id]);
+    await pool.query(`UPDATE oak_social_agent_settings SET last_run_at=now() WHERE id=1`);
+    await pool.query(`INSERT INTO oak_social_notification_outbox(campaign_id) VALUES($1)
+      ON CONFLICT(campaign_id,channel) DO NOTHING`, [saved.campaign_id]);
+    await audit('daily_agent_draft_created', 'campaign', saved.campaign_id, { reason });
+    return saved;
+  } finally {
+    if (locked) {
+      try { await lockClient.query('SELECT pg_advisory_unlock($1)', [SOCIAL_AGENT_LOCK_KEY]); }
+      finally { lockClient.release(); }
+    } else {
+      lockClient.release();
+    }
+  }
 }
 
 app.post('/agent/run-now', asyncRoute(async (_req, res) => {
@@ -966,17 +1679,17 @@ function zonedParts(date, timeZone) {
 
 async function agentTick() {
   try {
-    await pool.query(`UPDATE oak_social_projects SET status='ready_to_publish',updated_at=now() WHERE status='scheduled' AND scheduled_for <= now()`);
+    // Approval Core v1: automatic ready-to-publish transitions are disabled until a version-safe publisher exists.
     const settings = (await pool.query('SELECT * FROM oak_social_agent_settings WHERE id=1')).rows[0];
     if (!settings?.enabled) return;
     const now = new Date();
     const z = zonedParts(now, settings.timezone || 'Asia/Shanghai');
-    if (z.weekday !== Number(settings.weekday) || z.hour !== Number(settings.hour)) return;
+    if (z.hour !== Number(settings.hour)) return;
     if (settings.last_run_at) {
       const last = zonedParts(new Date(settings.last_run_at), settings.timezone || 'Asia/Shanghai');
       if (last.dateKey === z.dateKey) return;
     }
-    await runAgentDraft('scheduled_weekly_agent');
+    await runAgentDraft('scheduled_daily_agent');
   } catch (err) {
     console.error('Social agent tick failed:', err.message);
   }
@@ -984,7 +1697,7 @@ async function agentTick() {
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  res.status(500).json({ error: err.message || 'Unexpected server error' });
+  res.status(err.status === 409 ? 409 : 500).json({ error: err.message || 'Unexpected server error' });
 });
 
 await initDb();
@@ -992,4 +1705,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Oak Social API listening on ${PORT} (${BUILD})`);
   setTimeout(agentTick, 5000);
   setInterval(agentTick, Math.max(60000, AGENT_TICK_MS));
+  setTimeout(telegramOutboxTick, 10000);
+  setInterval(telegramOutboxTick, 60000);
 });

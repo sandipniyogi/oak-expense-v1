@@ -12,14 +12,16 @@ export function combinedSummary(parts){
   return {count:values.length,total:total!==null&&Number.isSafeInteger(total)&&total<=999999999999?total:null};
 }
 export function combinedValidation(parts,form){
-  if(!parts.length)return 'Choose at least one screenshot.';
+  if(!parts.length)return 'Choose screenshots or add payments from Excel.';
   if(parts.length>20)return 'Choose no more than 20 screenshots.';
+  if(parts.some(p=>p.workbook)&&(parts.length!==1||!parts[0].workbook.rows.some(Boolean)))return 'Keep at least one imported Excel row and save it as its own group.';
   for(const [i,p] of parts.entries()){
-    if(!p.amounts.length||p.amounts.length>50)return `Screenshot ${i+1}: enter between 1 and 50 payment amounts.`;
-    if(p.amounts.some(n=>paymentCents(n)===null))return `Screenshot ${i+1}: enter a positive amount with at most two decimal places for each payment.`;
+    const label=p.workbook?'Excel payments':`Screenshot ${i+1}`;
+    if(!p.amounts.length||p.amounts.length>50)return `${label}: enter between 1 and 50 payment amounts.`;
+    if(p.amounts.some(n=>paymentCents(n)===null))return `${label}: enter a positive amount with at most two decimal places for each payment.`;
   }
   const {count,total}=combinedSummary(parts);
-  if(count<2)return 'Enter at least two payment amounts overall. Use “Add another amount” if both payments are in one screenshot.';
+  if(count<2)return 'Enter at least two payment amounts overall. Use “Add another amount” to enter another payment.';
   if(total===null)return 'The combined total is too large. Review the payment amounts.';
   if(!String(form.merchant??'').trim())return 'Enter the vendor name.';
   if(!form.user_id)return 'Select who paid.';
@@ -39,6 +41,7 @@ export async function saveCombined({api,parts,form,humanReview=null,request=fetc
   if(invalid)throw new CombinedSaveError(invalid);
   const ready=[];
   for(const [i,p] of parts.entries()){
+    if(p.workbook){ready.push(p);continue;}
     let part=p;
     if(p.status!=='ready'||!p.data?.image_path){
       onProgress(`Attaching screenshot ${i+1} of ${parts.length}…`);
@@ -60,7 +63,11 @@ export async function saveCombined({api,parts,form,humanReview=null,request=fetc
     if(part.data.duplicate)throw new CombinedSaveError(`Screenshot ${i+1} is already attached to a saved expense. No combined expense was submitted. Remove it or check saved expenses.`);
     ready.push(part);
   }
-  const payload={...form,parts:ready.map(p=>({amounts:p.amounts,expense_date:p.expense_date,image_path:p.data.image_path,original_filename:p.file.name,ocr_raw:humanReview?{...p.data,combined_human_review:humanReview}:p.data}))};
+  const payload={...form,parts:ready.map(p=>({
+    amounts:p.amounts,expense_date:p.expense_date,
+    ...(p.workbook ? {workbook:p.workbook} : {image_path:p.data.image_path,original_filename:p.file.name}),
+    ocr_raw:humanReview?{...p.data,combined_human_review:humanReview}:p.data
+  }))};
   onProgress('Saving combined expense…');
   let response;
   try{

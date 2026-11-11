@@ -1,9 +1,13 @@
 import test from 'node:test';import assert from 'node:assert/strict';import config from '../next.config.mjs';import fs from 'node:fs';
 test('all modules have distinct same-origin routes to fixed Docker services',async()=>{
- const routes=(await config.rewrites()).beforeFiles;assert.equal(routes.length,4);assert.equal(new Set(routes.map(r=>r.source)).size,4);
+ const routes=(await config.rewrites()).beforeFiles;assert.equal(routes.length,3);assert.equal(new Set(routes.map(r=>r.source)).size,3);
  assert.ok(routes.some(r=>r.source==='/module-api/keg/:path*'&&r.destination==='http://keg-api:4200/:path*'));
  assert.ok(routes.some(r=>r.source==='/module-api/inventory/:path*'&&r.destination==='http://inventory-api:4200/:path*'));
  for(const r of routes)assert.doesNotMatch(r.destination,/localhost/);
+ const socialGateway=new URL('../app/module-api/social/[...path]/route.js',import.meta.url);
+ const socialSource=fs.readFileSync(socialGateway,'utf8');
+ assert.match(socialSource,/http:\/\/social-api:4500/);
+ assert.match(socialSource,/cookie/);
 });
 test('browser module pages have no hardcoded local API addresses',()=>{
  const files=['kegs/page.js','inventory/page.js','inventory/admin/page.js','inventory/receive/page.js','inventory/operations/page.js','inventory/labels/page.js','inventory/labels/[id]/page.js','inventory/scan/page.js','social/_components/socialApi.js'];

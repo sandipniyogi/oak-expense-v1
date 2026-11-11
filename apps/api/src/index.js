@@ -114,9 +114,13 @@ app.post('/ocr', upload.single('file'), async (req, res) => {
 
     const form = new FormData();
     form.append('file', new Blob([bytes], { type: normalized.mimetype }), 'oak-upload.png');
-    const response = await fetch(`${ocrUrl}/extract`, { method: 'POST', body: form });
+    const mode = req.query.mode === 'red_ledger' ? '?mode=red_ledger' : '';
+    const response = await fetch(`${ocrUrl}/extract${mode}`, { method: 'POST', body: form });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'OCR failed');
+    if (!response.ok) {
+      if (mode) return res.status(response.status).json({error:data.detail || 'OCR failed'});
+      throw new Error(data.detail || 'OCR failed');
+    }
 
     res.json({
       ...data,
@@ -230,10 +234,13 @@ app.post('/expenses', async (req, res) => {
 app.post('/expenses/combined', async (req, res) => {
   const {user_id,category_id,merchant,payment_method,expense_date,description,reimbursement_required=false,parts} = req.body || {};
   if (!user_id || !String(merchant || '').trim() || !Array.isArray(parts) || parts.length < 1 || parts.length > 20)
-    return res.status(400).json({error:'Choose a payer, enter the vendor and select 1 to 20 screenshots.'});
+    return res.status(400).json({error:'Choose a payer, enter the vendor and select screenshots or one workbook payment group.'});
   const client = await pool.connect();
   try {
+    if (parts.some(p => p?.workbook) && parts.length !== 1)
+      throw Object.assign(new Error('Save Excel payments as their own group.'),{status:400});
     const validated = parts.map(p => {
+      if (!p || typeof p !== 'object') throw Object.assign(new Error('Invalid payment group.'),{status:400});
       const entries = Array.isArray(p.amounts) ? p.amounts : [p.amount];
       if (!entries.length || entries.length > 50) throw Object.assign(new Error('Enter between 1 and 50 amounts per screenshot.'),{status:400});
       const amountCents = entries.map(entry => {
@@ -246,20 +253,48 @@ app.post('/expenses/combined', async (req, res) => {
       });
       const cents=amountCents.reduce((a,b)=>a+b,0);
       if(!Number.isSafeInteger(cents)||cents>999999999999) throw Object.assign(new Error('Screenshot total is too large.'),{status:400});
+      const amounts=amountCents.map(n=>(n/100).toFixed(2));
+      if (p.workbook) {
+        const {filename,sheet,rows}=p.workbook;
+        const invalid=()=>Object.assign(new Error('Invalid Excel payment row references.'),{status:400});
+        if (typeof filename!=='string' || !/\.xlsx$/i.test(filename) || filename.length>255 ||
+            typeof sheet!=='string' || !sheet.trim() || sheet.length>31 ||
+            !Array.isArray(rows) || rows.length!==amounts.length || !rows.some(Boolean)) throw invalid();
+        const numbers=new Set();
+        const reviewed=rows.map(row=>{
+          if(row===null)return null;
+          if(!row || !Number.isSafeInteger(row.number) || row.number<1 || row.number>1048576 ||
+             numbers.has(row.number) || !Number.isSafeInteger(row.cents) || row.cents>=0 ||
+             typeof row.date!=='string' || typeof row.description!=='string') throw invalid();
+          numbers.add(row.number);
+          return {number:row.number,cents:row.cents,date:row.date.slice(0,100),description:row.description.slice(0,500)};
+        });
+        const row_hashes=reviewed.filter(Boolean).map(row=>crypto.createHash('sha256')
+          .update(JSON.stringify([filename,sheet,row])).digest('hex'));
+        return {amount:(cents/100).toFixed(2),amounts,image_path:null,image_sha256:null,
+          expense_date:p.expense_date||null,original_filename:filename,workbook:{sheet,rows:reviewed,row_hashes},ocr_raw:p.ocr_raw||{}};
+      }
       const image_path=assertStoredAttachment(p.image_path);
       if (!image_path || image_path !== p.image_path) throw Object.assign(new Error('Each payment requires a valid uploaded screenshot.'),{status:400});
       const image_sha256=crypto.createHash('sha256').update(fs.readFileSync(path.join(uploadDir,image_path))).digest('hex');
-      return {amount:(cents/100).toFixed(2),amounts:amountCents.map(n=>(n/100).toFixed(2)),image_path,image_sha256,expense_date:p.expense_date || null,original_filename:String(p.original_filename||'').slice(0,255),ocr_raw:p.ocr_raw||{}};
+      return {amount:(cents/100).toFixed(2),amounts,image_path,image_sha256,expense_date:p.expense_date || null,original_filename:String(p.original_filename||'').slice(0,255),ocr_raw:p.ocr_raw||{}};
     });
     if (validated.reduce((n,p)=>n+p.amounts.length,0) < 2) throw Object.assign(new Error('Enter at least two payment amounts.'),{status:400});
-    const hashes=validated.map(p=>p.image_sha256);
+    const hashes=validated.map(p=>p.image_sha256).filter(Boolean);
     if (new Set(hashes).size !== hashes.length) throw Object.assign(new Error('The same screenshot was selected more than once.'),{status:400});
     const cents=validated.reduce((sum,p)=>sum+Math.round(Number(p.amount)*100),0);
     if (!Number.isSafeInteger(cents) || cents > 999999999999) throw Object.assign(new Error('Combined total is too large.'),{status:400});
     await client.query('BEGIN');
-    // Refuse known duplicates, including individual images from an existing combined expense.
-    const duplicate=await client.query(`select id from expenses where image_sha256=any($1::text[]) or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(ocr_raw->'combined_payments')='array' then ocr_raw->'combined_payments' else '[]'::jsonb end) part where part->>'image_sha256'=any($1::text[])) limit 1`,[hashes]);
-    if(duplicate.rows.length) throw Object.assign(new Error('A screenshot is already attached to a saved expense. Check duplicates before combining.'),{status:409});
+    const workbook=validated[0].workbook;
+    if (workbook) {
+      // Serialize workbook saves while checking for overlapping imported rows.
+      await client.query("select pg_advisory_xact_lock(hashtext('oak-combined-excel-payments'))");
+      const duplicate=await client.query("select id from expenses where ocr_raw #> '{combined_payments,0,workbook,row_hashes}' ?| $1::text[] limit 1",[workbook.row_hashes]);
+      if(duplicate.rows.length) throw Object.assign(new Error('One or more of these Excel rows are already saved. Remove them before combining.'),{status:409});
+    } else {
+      const duplicate=await client.query(`select id from expenses where image_sha256=any($1::text[]) or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(ocr_raw->'combined_payments')='array' then ocr_raw->'combined_payments' else '[]'::jsonb end) part where part->>'image_sha256'=any($1::text[])) limit 1`,[hashes]);
+      if(duplicate.rows.length) throw Object.assign(new Error('A screenshot is already attached to a saved expense. Check duplicates before combining.'),{status:409});
+    }
     const merchantId=await findOrCreateMerchantId(client,merchant,category_id);
     const result=await client.query(`insert into expenses(user_id,merchant_id,category_id,amount,currency,payment_method,expense_date,description,reimbursement_required,reimbursement_status,image_path,image_sha256,ocr_raw) values($1,$2,$3,$4,'CNY',$5,$6,$7,$8,$9,$10,$11,$12) returning *`,[user_id,merchantId,category_id||null,(cents/100).toFixed(2),payment_method||null,expense_date||null,description||null,Boolean(reimbursement_required),reimbursement_required?'pending':'not_required',validated[0].image_path,validated[0].image_sha256,{source:'combined',combined_payments:validated}]);
     await client.query('COMMIT');
@@ -421,7 +456,16 @@ app.get('/expenses/:id/combined-screenshot/:index', async (req,res) => {
     const index=Number(req.params.index);
     const result=await pool.query('select ocr_raw from expenses where id=$1',[req.params.id]);
     const parts=result.rows[0]?.ocr_raw?.combined_payments;
-    if(!Number.isInteger(index)||index<0||!Array.isArray(parts)||!parts[index]?.image_path) return res.status(404).json({error:'Screenshot not found'});
+    const part=Number.isInteger(index)&&index>=0&&Array.isArray(parts) ? parts[index] : null;
+    if(part?.workbook){
+      const lines=part.amounts.map((amount,i)=>{
+        const row=part.workbook.rows[i];
+        return row ? `Row ${row.number} | ${row.date} | ${row.description} | Original: ${(row.cents/100).toFixed(2)} CNY | Saved: ${amount} CNY`
+          : `Manually added | Saved: ${amount} CNY`;
+      });
+      return res.type('text/plain').send([`Excel payment references: ${part.original_filename} / ${part.workbook.sheet}`,...lines].join('\n'));
+    }
+    if(!part?.image_path) return res.status(404).json({error:'Screenshot not found'});
     const filename=path.join(uploadDir,path.basename(parts[index].image_path));
     if(!fs.existsSync(filename)) return res.status(404).json({error:'Screenshot file is missing'});
     const bytes=fs.readFileSync(filename);const ext=detectImageExtension(bytes);
@@ -1121,6 +1165,11 @@ app.get('/reports/expenses.xlsx', async (req, res) => {
         for(const [i,part] of row.ocr_raw.combined_payments.entries()){
           const r=evidence.addRow([reportRowDate(row),row.merchant||'',Number(row.amount),i+1,part.expense_date||'',Number(part.amount),'',Array.isArray(part.amounts)?part.amounts.map(a=>'¥'+a).join(' + '):'']);
           r.getCell(3).numFmt='¥#,##0.00';r.getCell(6).numFmt='¥#,##0.00';
+          if(part.workbook){
+            r.getCell(7).value=`Excel: ${part.original_filename} / ${part.workbook.sheet}`;
+            r.getCell(8).value=part.amounts.map((amount,j)=>`${part.workbook.rows[j] ? 'Row '+part.workbook.rows[j].number : 'Manual'}: ¥${amount}`).join(' · ');
+            continue;
+          }
           const filename=path.join(uploadDir,path.basename(part.image_path||''));
           if(!part.image_path||!fs.existsSync(filename)){r.getCell(7).value='Screenshot missing';continue;}
           const bytes=fs.readFileSync(filename), ext=detectImageExtension(bytes);
